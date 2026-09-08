@@ -21,8 +21,9 @@ venv/
 .vscode/
 .idea/
 
-# Backup directories
+# Backup directories & files
 results_backup/
+*.bak
 
 # OS generated files
 .DS_Store
