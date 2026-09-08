@@ -134,17 +134,22 @@ class IsolationForest:
 
     def __init__(self, n_estimators: int = 100, max_samples: Union[int, float, str] = "auto", max_features: float = 1.0,
                  contamination: Union[float, str] = "auto", random_state: int = 42):
-        if n_estimators <= 0:
+        if isinstance(n_estimators, bool) or not isinstance(n_estimators, int) or n_estimators <= 0:
             raise ValueError("n_estimators must be > 0")
 
-        if isinstance(max_samples, (int, float)) and max_samples <= 0:
-            raise ValueError("max_samples must be > 0")
+        if max_samples != "auto":
+            if isinstance(max_samples, bool):
+                raise ValueError("max_samples cannot be boolean")
+            if not isinstance(max_samples, (int, float)) or max_samples <= 0:
+                raise ValueError("max_samples must be > 0")
+            if isinstance(max_samples, float) and max_samples > 1.0:
+                raise ValueError("max_samples as float must be in (0, 1]")
 
-        if not (0 < max_features <= 1):
+        if isinstance(max_features, bool) or not isinstance(max_features, (int, float)) or not (0 < max_features <= 1):
             raise ValueError("max_features must be in (0, 1]")
 
         if contamination != "auto":
-            if not isinstance(contamination, (int, float)) or not (0 < contamination < 0.5):
+            if isinstance(contamination, bool) or not isinstance(contamination, (int, float)) or not (0 < contamination < 0.5):
                 raise ValueError("contamination must be in (0, 0.5)")
 
         self.n_estimators = n_estimators
@@ -181,6 +186,12 @@ class IsolationForest:
         if X_arr.ndim != 2:
             raise ValueError(f"Dữ liệu đầu vào phải là mảng 2 chiều (n_samples, n_features), nhận được {X_arr.ndim} chiều.")
 
+        if X_arr.shape[0] == 0:
+            raise ValueError("Dữ liệu đầu vào không được rỗng (n_samples == 0).")
+
+        if X_arr.shape[1] == 0:
+            raise ValueError("Dữ liệu đầu vào không có thuộc tính nào (n_features == 0).")
+
         if not np.all(np.isfinite(X_arr)):
             raise ValueError("Dữ liệu đầu vào chứa giá trị không hợp lệ (NaN hoặc Inf).")
 
@@ -204,7 +215,10 @@ class IsolationForest:
         X_arr = self._validate_X(X, check_features=False)
         n_samples, n_features = X_arr.shape
         self.n_features_in_ = n_features
-        rng = np.random.RandomState(self.random_state)
+        if isinstance(self.random_state, np.random.RandomState):
+            rng = self.random_state
+        else:
+            rng = np.random.RandomState(self.random_state)
 
         # 1. Xác định kích thước mẫu con psi và tính max_depth dựa trên cấu hình max_samples
         if self.max_samples == "auto":

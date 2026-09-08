@@ -15,13 +15,16 @@ from model import IsolationForest, IsolationForestScratch, c_factor
 from run_pipeline import (
     DEFAULT_CONFIG,
     PARAM_GRID,
+    Pipeline,
     PipelineScratch,
+    StratifiedKFold,
     accuracy_score_scratch,
     precision_score_scratch,
     recall_score_scratch,
     f1_score_scratch,
     balanced_accuracy_score_scratch,
     roc_auc_score_scratch,
+    confusion_matrix,
     roc_curve,
     precision_recall_curve,
     average_precision_score,
@@ -278,6 +281,58 @@ class TestIsolationForestPipeline(unittest.TestCase):
             train_test_split(np.zeros(10), np.zeros(10))
         with self.assertRaises(ValueError):
             threshold_from_contamination([0.1, 0.2], contamination=0.8)
+
+    def test_16_edge_cases_and_pipeline_properties(self):
+        """Kiểm tra các trường hợp biên và thuộc tính Pipeline."""
+        # 1. Pipeline default init and properties
+        pipe = Pipeline()
+        self.assertIsNotNone(pipe.model)
+        self.assertEqual(pipe.threshold_, 0.5)
+        self.assertEqual(pipe.offset_, -0.5)
+        self.assertEqual(pipe.max_depth, 8)
+
+        # 2. Fit với RandomState object
+        rng = np.random.RandomState(123)
+        model = IsolationForest(n_estimators=5, max_samples=32, random_state=rng)
+        X_dummy = np.random.RandomState(42).randn(50, 4)
+        model.fit(X_dummy)
+        self.assertEqual(len(model.estimators_), 5)
+
+        # 3. Dữ liệu rỗng hoặc sai số chiều
+        with self.assertRaises(ValueError):
+            IsolationForest().fit(np.zeros((0, 4)))
+        with self.assertRaises(ValueError):
+            IsolationForest().fit(np.zeros((10, 0)))
+
+        # 4. StratifiedKFold validation
+        with self.assertRaises(ValueError):
+            StratifiedKFold(n_splits=1)
+
+        # 5. Threshold from contamination edge cases
+        with self.assertRaises(ValueError):
+            threshold_from_contamination([], 0.1)
+        with self.assertRaises(ValueError):
+            threshold_from_contamination([0.1, 0.2], contamination="invalid")
+
+        # 6. Metrics length mismatch
+        with self.assertRaises(ValueError):
+            confusion_matrix([0, 1], [0])
+        with self.assertRaises(ValueError):
+            accuracy_score_scratch([0, 1], [0])
+        with self.assertRaises(ValueError):
+            balanced_accuracy_score_scratch([0, 1], [0])
+        with self.assertRaises(ValueError):
+            precision_score_scratch([0, 1], [0])
+        with self.assertRaises(ValueError):
+            recall_score_scratch([0, 1], [0])
+        with self.assertRaises(ValueError):
+            f1_score_scratch([0, 1], [0])
+        with self.assertRaises(ValueError):
+            roc_auc_score_scratch([0, 1], [0.5])
+        with self.assertRaises(ValueError):
+            average_precision_score([0, 1], [0.5])
+        with self.assertRaises(ValueError):
+            permutation_importance_scratch(model, X_dummy, np.zeros(len(X_dummy)), n_repeats=0)
 
 
 # Top-level functions tương thích theo tài liệu hướng dẫn

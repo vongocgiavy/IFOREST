@@ -7,6 +7,7 @@ NASA Shuttle Dataset - Quy trình thực thi & Đánh giá mô hình.
 import argparse
 import os
 import sys
+from typing import Optional, Union, List, Tuple
 # pyrefly: ignore [missing-import]
 import numpy as np
 import pandas as pd
@@ -35,8 +36,24 @@ if sys.platform == "win32":
 class Pipeline:
     """Pipeline đóng gói suy luận trực tiếp thuần iForest trên dữ liệu cảm biến thô."""
 
-    def __init__(self, model: IsolationForest = None):
-        self.model = model
+    def __init__(self, model: Optional[IsolationForest] = None):
+        self.model = IsolationForest() if model is None else model
+
+    @property
+    def threshold_(self):
+        return self.model.threshold_
+
+    @property
+    def offset_(self):
+        return self.model.offset_
+
+    @property
+    def estimators_(self):
+        return self.model.estimators_
+
+    @property
+    def max_depth(self):
+        return self.model.max_depth
 
     def fit(self, X, y=None):
         X_arr = X.values if hasattr(X, "values") else np.asarray(X, dtype=np.float64)
@@ -81,7 +98,10 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
     if len(X) < 2:
         raise ValueError(f"Dataset must have at least 2 samples to split, got {len(X)}")
 
-    rng = np.random.RandomState(random_state)
+    if isinstance(random_state, np.random.RandomState):
+        rng = random_state
+    else:
+        rng = np.random.RandomState(random_state)
     y_arr = np.asarray(y)
 
     if stratify:
@@ -121,26 +141,42 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
 
 def threshold_from_contamination(scores, contamination):
     """Tính ngưỡng phân vị từ điểm số tập train dựa trên contamination (không rò rỉ tập test)."""
-    if contamination == "auto":
+    if isinstance(contamination, str) and contamination.lower() == "auto":
         return 0.5
 
-    if not 0 < contamination < 0.5:
+    if isinstance(contamination, bool):
+        raise ValueError("contamination cannot be boolean")
+
+    try:
+        contam_val = float(contamination)
+    except (ValueError, TypeError):
+        raise ValueError(f"contamination không hợp lệ: {contamination}. Phải là 'auto' hoặc số thực trong (0, 0.5)")
+
+    if not 0.0 < contam_val < 0.5:
         raise ValueError("contamination must be in (0, 0.5)")
 
-    return float(np.quantile(scores, 1.0 - contamination))
+    scores_arr = np.asarray(scores, dtype=float)
+    if len(scores_arr) == 0:
+        raise ValueError("scores array cannot be empty")
 
+    return float(np.percentile(scores_arr, 100.0 * (1.0 - contam_val)))
 
 
 class StratifiedKFold:
     """K-Fold phân tầng cho Cross-Validation."""
 
     def __init__(self, n_splits: int = 3, shuffle: bool = True, random_state: int = 42):
+        if isinstance(n_splits, bool) or not isinstance(n_splits, int) or n_splits < 2:
+            raise ValueError("n_splits must be an integer >= 2")
         self.n_splits = n_splits
         self.shuffle = shuffle
         self.random_state = random_state
 
     def split(self, X, y):
-        rng = np.random.RandomState(self.random_state)
+        if isinstance(self.random_state, np.random.RandomState):
+            rng = self.random_state
+        else:
+            rng = np.random.RandomState(self.random_state)
         y_arr = np.asarray(y)
         folds = [[] for _ in range(self.n_splits)]
         for cls in np.unique(y_arr):
@@ -162,6 +198,8 @@ class StratifiedKFold:
 
 def confusion_matrix(y_true, y_pred):
     y_t, y_p = np.asarray(y_true, dtype=int), np.asarray(y_pred, dtype=int)
+    if len(y_t) != len(y_p):
+        raise ValueError("y_true and y_pred must have the same length")
     return np.array([
         [int(np.sum((y_t == 0) & (y_p == 0))), int(np.sum((y_t == 0) & (y_p == 1)))],
         [int(np.sum((y_t == 1) & (y_p == 0))), int(np.sum((y_t == 1) & (y_p == 1)))]
@@ -169,24 +207,43 @@ def confusion_matrix(y_true, y_pred):
 
 
 def accuracy_score(y_true, y_pred) -> float:
-    return float(np.mean(np.asarray(y_true, dtype=int) == np.asarray(y_pred, dtype=int)))
+    y_t, y_p = np.asarray(y_true, dtype=int), np.asarray(y_pred, dtype=int)
+    if len(y_t) != len(y_p):
+        raise ValueError("y_true and y_pred must have the same length")
+    if len(y_t) == 0:
+        return 0.0
+    return float(np.mean(y_t == y_p))
 
 
 def balanced_accuracy_score(y_true, y_pred) -> float:
     y_t, y_p = np.asarray(y_true, dtype=int), np.asarray(y_pred, dtype=int)
-    rec0 = float(np.sum((y_t == 0) & (y_p == 0)) / max(np.sum(y_t == 0), 1))
-    rec1 = float(np.sum((y_t == 1) & (y_p == 1)) / max(np.sum(y_t == 1), 1))
-    return float((rec0 + rec1) / 2.0)
+    if len(y_t) != len(y_p):
+        raise ValueError("y_true and y_pred must have the same length")
+    n_0 = int(np.sum(y_t == 0))
+    n_1 = int(np.sum(y_t == 1))
+    rec0 = float(np.sum((y_t == 0) & (y_p == 0)) / n_0) if n_0 > 0 else 0.0
+    rec1 = float(np.sum((y_t == 1) & (y_p == 1)) / n_1) if n_1 > 0 else 0.0
+    if n_0 > 0 and n_1 > 0:
+        return float((rec0 + rec1) / 2.0)
+    elif n_0 > 0:
+        return rec0
+    elif n_1 > 0:
+        return rec1
+    return 0.0
 
 
 def precision_score(y_true, y_pred, zero_division: int = 0) -> float:
     y_t, y_p = np.asarray(y_true, dtype=int), np.asarray(y_pred, dtype=int)
+    if len(y_t) != len(y_p):
+        raise ValueError("y_true and y_pred must have the same length")
     denom = np.sum(y_p == 1)
     return float(np.sum((y_t == 1) & (y_p == 1)) / denom) if denom > 0 else float(zero_division)
 
 
 def recall_score(y_true, y_pred, zero_division: int = 0) -> float:
     y_t, y_p = np.asarray(y_true, dtype=int), np.asarray(y_pred, dtype=int)
+    if len(y_t) != len(y_p):
+        raise ValueError("y_true and y_pred must have the same length")
     denom = np.sum(y_t == 1)
     return float(np.sum((y_t == 1) & (y_p == 1)) / denom) if denom > 0 else float(zero_division)
 
@@ -200,6 +257,12 @@ def f1_score(y_true, y_pred, zero_division: int = 0) -> float:
 def roc_auc_score(y_true, scores) -> float:
     """Tính ROC-AUC bằng thống kê Wilcoxon-Mann-Whitney U: O(N log N) vector hóa hoàn toàn."""
     y_t, sc = np.asarray(y_true, dtype=int), np.asarray(scores, dtype=float)
+    if len(y_t) != len(sc):
+        raise ValueError("y_true and scores must have the same length")
+    if len(y_t) == 0:
+        return 0.5
+    if not np.all(np.isfinite(sc)):
+        raise ValueError("scores contains NaN or Inf")
     order = np.argsort(sc)
     ranks = np.empty_like(order, dtype=float)
     ranks[order] = np.arange(1, len(sc) + 1)
@@ -294,16 +357,35 @@ def precision_recall_curve(y_true, y_score):
 
 def average_precision_score(y_true, y_score) -> float:
     """Tính Average Precision (AP) thuần túy theo diện tích dưới đường cong PR."""
-    precision, recall, _ = precision_recall_curve(y_true, y_score)
+    y_t = np.asarray(y_true, dtype=int)
+    sc = np.asarray(y_score, dtype=float)
+    if len(y_t) != len(sc):
+        raise ValueError("y_true and y_score must have the same length")
+    if len(y_t) == 0:
+        return 0.0
+    if not np.all(np.isfinite(sc)):
+        raise ValueError("y_score contains NaN or Inf")
+    precision, recall, _ = precision_recall_curve(y_t, sc)
     # Area under PR curve: tổng delta(Recall) * Precision
     return float(np.sum(np.diff(recall) * precision[1:]))
 
 
 def permutation_importance_scratch(model, X, y, n_repeats: int = 3, random_state: int = 42):
     """Đo lường Feature Importance bằng Permutation Importance thuần NumPy dựa trên độ suy giảm F1."""
-    rng = np.random.RandomState(random_state)
+    if n_repeats <= 0:
+        raise ValueError("n_repeats must be > 0")
+    if isinstance(random_state, np.random.RandomState):
+        rng = random_state
+    else:
+        rng = np.random.RandomState(random_state)
     X_arr = np.asarray(X, dtype=float)
     y_arr = np.asarray(y, dtype=int)
+    if len(X_arr) != len(y_arr):
+        raise ValueError("X and y must have the same length")
+    if X_arr.ndim != 2:
+        raise ValueError("X must be a 2D array")
+    if len(X_arr) == 0:
+        return np.zeros(0), np.zeros(0)
 
     base_pred = model.predict(X_arr)
     base_f1 = f1_score(y_arr, base_pred)
@@ -633,7 +715,7 @@ def main():
 
     metrics_df = pd.DataFrame([row_theo, row_emp])
     metrics_path = "metrics.csv"
-    if not os.path.exists(metrics_path):
+    if not os.path.exists(metrics_path) or os.path.getsize(metrics_path) == 0:
         metrics_df.to_csv(metrics_path, index=False)
     else:
         metrics_df.to_csv(metrics_path, mode="a", header=False, index=False)
