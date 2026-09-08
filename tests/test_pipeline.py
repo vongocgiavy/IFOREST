@@ -235,6 +235,8 @@ class TestIsolationForestPipeline(unittest.TestCase):
         with self.assertRaises(ValueError):
             train_test_split(np.zeros((10, 2)), np.zeros(8))
         with self.assertRaises(ValueError):
+            train_test_split(np.zeros((1, 2)), np.zeros(1))
+        with self.assertRaises(ValueError):
             threshold_from_contamination([0.1, 0.2], contamination=0.8)
 
 

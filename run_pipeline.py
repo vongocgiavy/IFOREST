@@ -71,6 +71,9 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
     if len(X) != len(y):
         raise ValueError("X and y must have the same number of samples")
 
+    if len(X) < 2:
+        raise ValueError(f"Dataset must have at least 2 samples to split, got {len(X)}")
+
     rng = np.random.RandomState(random_state)
     y_arr = np.asarray(y)
 
@@ -99,6 +102,12 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
 
     assert len(X_tr) + len(X_te) == len(X), "Sum of split sizes does not equal original size"
     assert len(y_tr) + len(y_te) == len(y), "Sum of label split sizes does not equal original size"
+
+    # Kiểm tra rò rỉ dữ liệu (Train/Test indices disjoint)
+    if isinstance(X, (pd.DataFrame, pd.Series)):
+        assert set(X_tr.index).isdisjoint(set(X_te.index)), "Data leakage: train/test indices overlap!"
+    else:
+        assert set(train_indices).isdisjoint(set(test_indices)), "Data leakage: train/test indices overlap!"
 
     return X_tr, X_te, y_tr, y_te
 
@@ -564,61 +573,55 @@ def main():
     cm_e = confusion_matrix(y_test, y_pred_emp)
     print(f"[*] Confusion Matrix: TN={cm_e[0,0]}  FP={cm_e[0,1]}  FN={cm_e[1,0]}  TP={cm_e[1,1]}")
 
-    # Ghi nhận kết quả chuẩn hóa vào metrics.csv (23 trường chuẩn xác)
-    dataset_name = "Statlog_Shuttle_ODDS" if args.odds else "Statlog_Shuttle"
+    # Ghi nhận kết quả chuẩn hóa vào metrics.csv (Metadata đầy đủ, phân biệt rõ loại ngưỡng)
     mode_name = "ODDS_Benchmark" if args.odds else ("Full_58k_Tuned" if tune else "Full_58k_Base")
-    anomaly_classes_metric = "2,3,5,6,7" if args.odds else "2,3,4,5,6,7"
 
     row_theo = {
-        "mode": mode_name,
-        "dataset": dataset_name,
-        "n_samples": len(df),
-        "n_features": len(feature_cols),
-        "train_size": len(X_train),
-        "test_size": len(X_test),
-        "normal_classes": "1",
-        "anomaly_classes": anomaly_classes_metric,
-        "random_state": random_state,
-        "n_estimators": best_params["n_estimators"],
-        "max_samples": best_params["max_samples"],
-        "max_features": best_params["max_features"],
-        "max_depth": best_model.max_depth,
-        "contamination": contam_str,
-        "threshold_type": "theoretical",
-        "threshold": round(th_theoretical, 6),
-        "accuracy": round(acc_t, 4),
-        "balanced_accuracy": round(bal_t, 4),
-        "precision": round(prec_t, 4),
-        "recall": round(rec_t, 4),
-        "f1": round(f1_t, 4),
-        "roc_auc": round(auc_val, 4),
-        "average_precision": round(ap_val, 4),
+        "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Mode": mode_name,
+        "N_Samples": len(df),
+        "Train_Size": len(X_train),
+        "Test_Size": len(X_test),
+        "Anomaly_Rate": round(float(y.mean()), 4),
+        "N_Estimators": best_params["n_estimators"],
+        "Max_Samples": best_params["max_samples"],
+        "Max_Features": best_params["max_features"],
+        "Max_Depth": best_model.max_depth,
+        "Random_State": random_state,
+        "Contamination": contam_str,
+        "Threshold_Type": "Theoretical_Auto",
+        "Threshold": round(th_theoretical, 6),
+        "Accuracy": round(acc_t, 4),
+        "Balanced_Accuracy": round(bal_t, 4),
+        "Precision": round(prec_t, 4),
+        "Recall": round(rec_t, 4),
+        "F1_Score": round(f1_t, 4),
+        "ROC_AUC": round(auc_val, 4),
+        "Average_Precision": round(ap_val, 4),
     }
 
     row_emp = {
-        "mode": mode_name,
-        "dataset": dataset_name,
-        "n_samples": len(df),
-        "n_features": len(feature_cols),
-        "train_size": len(X_train),
-        "test_size": len(X_test),
-        "normal_classes": "1",
-        "anomaly_classes": anomaly_classes_metric,
-        "random_state": random_state,
-        "n_estimators": best_params["n_estimators"],
-        "max_samples": best_params["max_samples"],
-        "max_features": best_params["max_features"],
-        "max_depth": best_model.max_depth,
-        "contamination": contam_str,
-        "threshold_type": "empirical",
-        "threshold": round(th_empirical, 6),
-        "accuracy": round(acc_e, 4),
-        "balanced_accuracy": round(bal_e, 4),
-        "precision": round(prec_e, 4),
-        "recall": round(rec_e, 4),
-        "f1": round(f1_e, 4),
-        "roc_auc": round(auc_val, 4),
-        "average_precision": round(ap_val, 4),
+        "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Mode": mode_name,
+        "N_Samples": len(df),
+        "Train_Size": len(X_train),
+        "Test_Size": len(X_test),
+        "Anomaly_Rate": round(float(y.mean()), 4),
+        "N_Estimators": best_params["n_estimators"],
+        "Max_Samples": best_params["max_samples"],
+        "Max_Features": best_params["max_features"],
+        "Max_Depth": best_model.max_depth,
+        "Random_State": random_state,
+        "Contamination": contam_str,
+        "Threshold_Type": "Train_Contamination",
+        "Threshold": round(th_empirical, 6),
+        "Accuracy": round(acc_e, 4),
+        "Balanced_Accuracy": round(bal_e, 4),
+        "Precision": round(prec_e, 4),
+        "Recall": round(rec_e, 4),
+        "F1_Score": round(f1_e, 4),
+        "ROC_AUC": round(auc_val, 4),
+        "Average_Precision": round(ap_val, 4),
     }
 
     metrics_df = pd.DataFrame([row_theo, row_emp])
