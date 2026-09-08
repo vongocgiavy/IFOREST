@@ -26,6 +26,8 @@ from run_pipeline import (
     precision_recall_curve,
     average_precision_score,
     permutation_importance_scratch,
+    train_test_split,
+    threshold_from_contamination,
 )
 
 
@@ -146,6 +148,158 @@ class TestIsolationForestPipeline(unittest.TestCase):
         self.assertEqual(len(imp_mean), 3)
         self.assertEqual(len(imp_std), 3)
 
+    def test_09_train_test_split_size_and_disjoint(self):
+        """Kiểm tra phân chia tập dữ liệu 80/20: Train=46,400, Test=11,600 và không trùng lặp index."""
+        df = pd.read_csv("shuttle_preprocessed.csv")
+        feat_cols = [c for c in df.columns if c.startswith("att_")]
+        X = df[feat_cols]
+        y = df["label"]
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=True
+        )
+        self.assertEqual(len(X_train), 46400, f"Train phải có đúng 46,400 mẫu, hiện là {len(X_train)}")
+        self.assertEqual(len(X_test), 11600, f"Test phải có đúng 11,600 mẫu, hiện là {len(X_test)}")
+        train_indices = set(X_train.index)
+        test_indices = set(X_test.index)
+        self.assertTrue(train_indices.isdisjoint(test_indices), "Data leakage: train/test indices overlap!")
+
+    def test_10_iforest_config(self):
+        """Kiểm tra cấu hình mô hình IsolationForest."""
+        model = IsolationForest(
+            n_estimators=100,
+            max_samples=256,
+            max_features=1.0,
+            contamination="auto",
+            random_state=42
+        )
+        self.assertEqual(model.n_estimators, 100)
+        self.assertEqual(model.max_samples, 256)
+        self.assertEqual(model.max_features, 1.0)
+        self.assertEqual(model.contamination, "auto")
+
+    def test_11_max_depth(self):
+        """Kiểm tra max_depth = ceil(log2(max_samples)) = 8 với max_samples=256."""
+        model = IsolationForest(
+            n_estimators=100,
+            max_samples=256,
+            random_state=42
+        )
+        self.assertEqual(model.max_depth, 8)
+
+    def test_12_c_factor_256(self):
+        """Kiểm tra c_factor(256) tiệm cận chính xác 10.2447709201."""
+        value = c_factor(256)
+        self.assertTrue(np.isclose(value, 10.2447709201, atol=1e-8))
+
+    def test_13_anomaly_score_range(self):
+        """Kiểm tra anomaly score nằm trong miền [0, 1] và là số hữu hạn (finite)."""
+        X_dummy = np.random.RandomState(42).randn(100, 4)
+        model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
+        model.fit(X_dummy)
+        scores = model.anomaly_score(X_dummy)
+        self.assertTrue(np.all(np.isfinite(scores)))
+        self.assertTrue(np.all(scores >= 0))
+        self.assertTrue(np.all(scores <= 1))
+
+    def test_14_score_consistency(self):
+        """Kiểm tra tính nhất quán toán học giữa anomaly_score, score_samples và decision_function."""
+        X_dummy = np.random.RandomState(42).randn(100, 4)
+        model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
+        model.fit(X_dummy)
+        anomaly_scores = model.anomaly_score(X_dummy)
+        sample_scores = model.score_samples(X_dummy)
+        decision = model.decision_function(X_dummy)
+        self.assertTrue(np.allclose(sample_scores, -anomaly_scores))
+        self.assertTrue(np.allclose(decision, 0.5 - anomaly_scores))
+
+    def test_15_hyperparameter_validation(self):
+        """Kiểm tra bẫy lỗi các siêu tham số không hợp lệ."""
+        with self.assertRaises(ValueError):
+            IsolationForest(n_estimators=0)
+        with self.assertRaises(ValueError):
+            IsolationForest(n_estimators=-10)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_samples=0)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_samples=-5)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_features=2.0)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_features=0.0)
+        with self.assertRaises(ValueError):
+            IsolationForest(contamination=0.9)
+        with self.assertRaises(ValueError):
+            IsolationForest(contamination=-0.1)
+        with self.assertRaises(ValueError):
+            train_test_split(np.zeros((10, 2)), np.zeros(10), test_size=1.5)
+        with self.assertRaises(ValueError):
+            train_test_split(np.zeros((10, 2)), np.zeros(8))
+        with self.assertRaises(ValueError):
+            threshold_from_contamination([0.1, 0.2], contamination=0.8)
+
+
+# Top-level functions tương thích theo tài liệu hướng dẫn
+def test_train_test_split_size():
+    df = pd.read_csv("shuttle_preprocessed.csv")
+    feat_cols = [c for c in df.columns if c.startswith("att_")]
+    X = df[feat_cols]
+    y = df["label"]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=True
+    )
+    assert len(X_train) == 46400
+    assert len(X_test) == 11600
+
+
+def test_iforest_config():
+    model = IsolationForest(
+        n_estimators=100,
+        max_samples=256,
+        max_features=1.0,
+        contamination="auto",
+        random_state=42
+    )
+    assert model.n_estimators == 100
+    assert model.max_samples == 256
+    assert model.max_features == 1.0
+    assert model.contamination == "auto"
+
+
+def test_max_depth():
+    model = IsolationForest(
+        n_estimators=100,
+        max_samples=256,
+        random_state=42
+    )
+    assert model.max_depth == 8
+
+
+def test_c_factor_256():
+    value = c_factor(256)
+    assert np.isclose(value, 10.2447709201, atol=1e-8)
+
+
+def test_anomaly_score_range():
+    X_dummy = np.random.RandomState(42).randn(100, 4)
+    model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
+    model.fit(X_dummy)
+    scores = model.anomaly_score(X_dummy)
+    assert np.all(np.isfinite(scores))
+    assert np.all(scores >= 0)
+    assert np.all(scores <= 1)
+
+
+def test_score_consistency():
+    X_dummy = np.random.RandomState(42).randn(100, 4)
+    model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
+    model.fit(X_dummy)
+    anomaly_scores = model.anomaly_score(X_dummy)
+    sample_scores = model.score_samples(X_dummy)
+    decision = model.decision_function(X_dummy)
+    assert np.allclose(sample_scores, -anomaly_scores)
+    assert np.allclose(decision, 0.5 - anomaly_scores)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

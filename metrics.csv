@@ -1,5 +1,5 @@
-Timestamp,Mode,N_Samples,N_Estimators,Threshold,Accuracy,F1_Score,ROC_AUC
-2026-09-04 18:32:48,Full_58k,58000,100,0.464,0.8026,0.5424,0.8432
-2026-09-04 18:52:53,Full_58k,58000,100,0.464,0.8026,0.5424,0.8432
-2026-09-04 19:45:50,Full_58k_Base,58000,100,0.464,0.8026,0.5424,0.8432
-2026-09-04 19:46:18,ODDS_Benchmark,49097,100,0.5581,0.9962,0.9734,0.9981
+mode,dataset,n_samples,n_features,train_size,test_size,normal_classes,anomaly_classes,random_state,n_estimators,max_samples,max_features,max_depth,contamination,threshold_type,threshold,accuracy,balanced_accuracy,precision,recall,f1,roc_auc,average_precision
+Full_58k_Base,Statlog_Shuttle,58000,9,46400,11600,1,"2,3,4,5,6,7",42,100,256,1.0,8,auto,theoretical,0.5,0.8363,0.6766,0.7101,0.3975,0.5097,0.8432,0.6647
+Full_58k_Base,Statlog_Shuttle,58000,9,46400,11600,1,"2,3,4,5,6,7",42,100,256,1.0,8,auto,empirical,0.464012,0.8026,0.7094,0.5383,0.5465,0.5424,0.8432,0.6647
+ODDS_Benchmark,Statlog_Shuttle_ODDS,49097,9,39278,9819,1,"2,3,5,6,7",42,100,256,1.0,8,auto,theoretical,0.5,0.9598,0.9711,0.6428,0.9843,0.7777,0.9981,0.9886
+ODDS_Benchmark,Statlog_Shuttle_ODDS,49097,9,39278,9819,1,"2,3,5,6,7",42,100,256,1.0,8,auto,empirical,0.558067,0.9962,0.9815,0.9826,0.9644,0.9734,0.9981,0.9886

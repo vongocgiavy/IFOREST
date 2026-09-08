@@ -21,6 +21,10 @@ venv/
 .vscode/
 .idea/
 
+# Backup directories
+results_backup/
+
 # OS generated files
 .DS_Store
 Thumbs.db
+

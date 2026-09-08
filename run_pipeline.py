@@ -65,6 +65,12 @@ class Pipeline:
 
 def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, stratify: bool = True):
     """Phân chia Train/Test phân tầng không phụ thuộc thư viện ngoài."""
+    if not 0 < test_size < 1:
+        raise ValueError("test_size must be between 0 and 1")
+
+    if len(X) != len(y):
+        raise ValueError("X and y must have the same number of samples")
+
     rng = np.random.RandomState(random_state)
     y_arr = np.asarray(y)
 
@@ -91,7 +97,22 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
     y_tr = y.iloc[train_indices].copy() if isinstance(y, pd.Series) else y_arr[train_indices].copy()
     y_te = y.iloc[test_indices].copy() if isinstance(y, pd.Series) else y_arr[test_indices].copy()
 
+    assert len(X_tr) + len(X_te) == len(X), "Sum of split sizes does not equal original size"
+    assert len(y_tr) + len(y_te) == len(y), "Sum of label split sizes does not equal original size"
+
     return X_tr, X_te, y_tr, y_te
+
+
+def threshold_from_contamination(scores, contamination):
+    """Tính ngưỡng phân vị từ điểm số tập train dựa trên contamination (không rò rỉ tập test)."""
+    if contamination == "auto":
+        return 0.5
+
+    if not 0 < contamination < 0.5:
+        raise ValueError("contamination must be in (0, 0.5)")
+
+    return float(np.quantile(scores, 1.0 - contamination))
+
 
 
 class StratifiedKFold:
@@ -323,7 +344,7 @@ DEFAULT_CONFIG = {
     "test_size": 0.2,
     "random_state": 42,
     "n_estimators": 100,
-    "max_samples": "auto",
+    "max_samples": 256,
     "max_features": 1.0,
     "contamination": "auto",
 }
@@ -340,13 +361,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Pure Isolation Forest Pipeline - NASA Shuttle Dataset")
     parser.add_argument("--data_path", type=str, default=DEFAULT_CONFIG["data_path"])
     parser.add_argument("--n_estimators", type=int, default=DEFAULT_CONFIG["n_estimators"])
-    parser.add_argument("--max_samples", type=str, default=DEFAULT_CONFIG["max_samples"])
+    parser.add_argument("--max_samples", type=str, default=str(DEFAULT_CONFIG["max_samples"]))
     parser.add_argument("--max_features", type=float, default=DEFAULT_CONFIG["max_features"])
     parser.add_argument("--contamination", type=str, default=DEFAULT_CONFIG["contamination"])
     parser.add_argument("--test_size", type=float, default=DEFAULT_CONFIG["test_size"])
     parser.add_argument("--random_state", type=int, default=DEFAULT_CONFIG["random_state"])
     parser.add_argument("--tune", action="store_true", help="Chạy tìm kiếm siêu tham số Stratified 3-Fold CV")
-    parser.add_argument("--odds", action="store_true", help="Chế độ ODDS Benchmark quốc tế (loại bỏ Class 4, tỷ lệ anomaly ~7.15%)")
+    parser.add_argument("--odds", action="store_true", help="Chế độ ODDS Benchmark quốc tế (loại bỏ Class 4, tỷ lệ anomaly ~7.15%%)")
     return parser.parse_args()
 
 
@@ -387,15 +408,22 @@ def main():
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=random_state, stratify=True
     )
-    print(f"[*] Kích thước: Train = {len(X_train):,} mẫu | Test = {len(X_test):,} mẫu")
+    if isinstance(X_train, (pd.DataFrame, pd.Series)):
+        train_indices = set(X_train.index)
+        test_indices = set(X_test.index)
+        assert train_indices.isdisjoint(test_indices), "Data leakage: train/test indices overlap!"
 
-    contamination = float(y_train.mean()) if contamination_arg.lower() == "auto" else float(contamination_arg)
+    print(f"Train samples: {len(X_train):,}")
+    print(f"Test samples : {len(X_test):,}")
+
+    model_contam = "auto" if contamination_arg.lower() == "auto" else float(contamination_arg)
+    train_contam = float(y_train.mean())
 
     if not tune:
         print("\n[*] Huấn luyện mô hình Thuần Isolation Forest (Single Run)...")
         best_model = IsolationForest(
             n_estimators=n_estimators, max_samples=max_samples,
-            max_features=max_features, contamination=contamination,
+            max_features=max_features, contamination=model_contam,
             random_state=random_state
         ).fit(X_train.values)
         best_params = {"n_estimators": n_estimators, "max_samples": max_samples, "max_features": max_features}
@@ -407,12 +435,12 @@ def main():
         best_cv_f1, best_params, best_model = -1.0, None, None
         for idx, p in enumerate(param_configs, 1):
             cur_n = int(p.get("n_estimators", 100))
-            cur_s = parse_max_samples(p.get("max_samples", "auto"))
+            cur_s = parse_max_samples(p.get("max_samples", 256))
             cur_f = float(p.get("max_features", 1.0))
 
             cv_f1s = []
             for tr_idx, val_idx in skf.split(X_train, y_train):
-                fold_contam = float(y_train.iloc[tr_idx].mean()) if contamination_arg.lower() == "auto" else contamination
+                fold_contam = "auto" if contamination_arg.lower() == "auto" else float(contamination_arg)
                 m = IsolationForest(n_estimators=cur_n, max_samples=cur_s, max_features=cur_f,
                                     contamination=fold_contam, random_state=random_state)
                 m.fit(X_train.iloc[tr_idx].values)
@@ -426,71 +454,187 @@ def main():
 
         best_model = IsolationForest(
             n_estimators=best_params["n_estimators"], max_samples=best_params["max_samples"],
-            max_features=best_params["max_features"], contamination=contamination,
+            max_features=best_params["max_features"], contamination=model_contam,
             random_state=random_state
         ).fit(X_train.values)
         print(f"[+] Cấu hình tối ưu: {best_params} (CV F1 = {best_cv_f1:.4f})")
 
-    # Đánh giá trên 2 ngưỡng tự nhiên (Không rò rỉ nhãn giám sát)
+    # Điểm Anomaly Score trên tập Train và tập Test (Không rò rỉ nhãn giám sát tập Test)
+    train_scores = best_model.anomaly_score(X_train.values)
     test_scores = best_model.anomaly_score(X_test.values)
-    th_contam = float(best_model.threshold_)
-    th_paper = 0.5000
+    c_val = c_factor(best_model.max_samples_actual_)
 
-    y_pred_contam = (test_scores >= th_contam).astype(int)
-    y_pred_paper = (test_scores >= th_paper).astype(int)
+    # 1. Ngưỡng lý thuyết (Theoretical threshold) từ bài báo gốc Liu et al. (2008)
+    th_theoretical = 0.500000
 
-    acc_c, bal_c = accuracy_score(y_test, y_pred_contam), balanced_accuracy_score(y_test, y_pred_contam)
-    prec_c, rec_c = precision_score(y_test, y_pred_contam), recall_score(y_test, y_pred_contam)
-    f1_c = f1_score(y_test, y_pred_contam)
+    # 2. Ngưỡng thực nghiệm (Empirical threshold tính từ tập Train)
+    th_empirical = float(np.percentile(train_scores, 100.0 * (1.0 - train_contam)))
 
-    acc_p, bal_p = accuracy_score(y_test, y_pred_paper), balanced_accuracy_score(y_test, y_pred_paper)
-    prec_p, rec_p = precision_score(y_test, y_pred_paper), recall_score(y_test, y_pred_paper)
-    f1_p = f1_score(y_test, y_pred_paper)
+    # Đánh giá tập Test theo Ngưỡng Lý thuyết
+    y_pred_theo = (test_scores >= th_theoretical).astype(int)
+    acc_t = accuracy_score(y_test, y_pred_theo)
+    bal_t = balanced_accuracy_score(y_test, y_pred_theo)
+    prec_t = precision_score(y_test, y_pred_theo)
+    rec_t = recall_score(y_test, y_pred_theo)
+    f1_t = f1_score(y_test, y_pred_theo)
+
+    # Đánh giá tập Test theo Ngưỡng Thực nghiệm
+    y_pred_emp = (test_scores >= th_empirical).astype(int)
+    acc_e = accuracy_score(y_test, y_pred_emp)
+    bal_e = balanced_accuracy_score(y_test, y_pred_emp)
+    prec_e = precision_score(y_test, y_pred_emp)
+    rec_e = recall_score(y_test, y_pred_emp)
+    f1_e = f1_score(y_test, y_pred_emp)
+
+    # Chỉ số độc lập ngưỡng (Ranking metrics)
     auc_val = roc_auc_score(y_test, test_scores)
+    ap_val = average_precision_score(y_test, test_scores)
+
+    dataset_title = "Statlog Shuttle (ODDS Benchmark)" if args.odds else "Statlog Shuttle"
+    anomaly_classes_str = "2, 3, 5, 6, 7" if args.odds else "2, 3, 4, 5, 6, 7"
+    contam_str = "auto" if contamination_arg.lower() == "auto" else str(contamination_arg)
+
+    print("\n" + "=" * 60)
+    print("ISOLATION FOREST - MAIN EXPERIMENT")
+    print("=" * 60)
+    print(f"Dataset             : {dataset_title}")
+    print(f"Samples             : {len(df):,}")
+    print(f"Features            : {len(feature_cols)}")
+    print(f"\nNormal class        : 1")
+    print(f"Anomaly classes     : {anomaly_classes_str}")
+    print(f"Anomaly rate        : {y.mean():.2%}")
+    print(f"\nTrain samples       : {len(X_train):,}")
+    print(f"Test samples        : {len(X_test):,}")
+    print(f"\nRandom state        : {random_state}")
+    print(f"n_estimators        : {best_params['n_estimators']}")
+    print(f"max_samples         : {best_params['max_samples']}")
+    print(f"max_features        : {best_params['max_features']}")
+    print(f"max_depth           : {best_model.max_depth}")
+    print(f"contamination       : {contam_str}")
+    print(f"\nc({best_model.max_samples_actual_})              : {c_val:.7f}")
+    print(f"\nThreshold type      : theoretical")
+    print(f"Threshold           : {th_theoretical:.6f}")
+    print("-" * 60)
+    print(f"Accuracy            : {acc_t:.4f}")
+    print(f"Balanced Accuracy   : {bal_t:.4f}")
+    print(f"Precision           : {prec_t:.4f}")
+    print(f"Recall              : {rec_t:.4f}")
+    print(f"F1                  : {f1_t:.4f}")
+    print(f"ROC-AUC             : {auc_val:.4f}")
+    print(f"Average Precision   : {ap_val:.4f}")
+    print("-" * 60)
+
+    print("\n" + "=" * 60)
+    print("THRESHOLD ANALYSIS - EMPIRICAL THRESHOLD")
+    print("=" * 60)
+    print(f"Threshold type       : empirical (train quantile: 1 - contam)")
+    print(f"Threshold            : {th_empirical:.6f}")
+    print(f"Theoretical threshold: {th_theoretical:.6f}")
+    print("-" * 60)
+    print(f"Accuracy             : {acc_e:.4f}")
+    print(f"Balanced Accuracy    : {bal_e:.4f}")
+    print(f"Precision            : {prec_e:.4f}")
+    print(f"Recall               : {rec_e:.4f}")
+    print(f"F1                   : {f1_e:.4f}")
+    print(f"ROC-AUC              : {auc_val:.4f}")
+    print(f"Average Precision    : {ap_val:.4f}")
+    print("-" * 60)
 
     print("\n" + "=" * 68)
-    print(f"      KẾT QUẢ ĐÁNH GIÁ THUẦN ISOLATION FOREST (TẬP TEST N={len(X_test):,})")
+    print(f"      SO SÁNH 2 NGƯỠNG TRÊN TẬP TEST (N={len(X_test):,})")
     print("=" * 68)
-    print(f"{'Chỉ số':<22} | {'Ngưỡng Contam (' + f'{th_contam:.4f}' + ')':<20} | {'Ngưỡng Liu (0.5000)':<20}")
+    print(f"{'Chỉ số':<22} | {'Ngưỡng Lý thuyết (0.5000)':<25} | {'Ngưỡng Thực nghiệm (' + f'{th_empirical:.4f}' + ')':<25}")
     print("-" * 68)
-    print(f"{'Overall Accuracy':<22} | {acc_c:<20.4f} | {acc_p:<20.4f}")
-    print(f"{'Balanced Accuracy':<22} | {bal_c:<20.4f} | {bal_p:<20.4f}")
-    print(f"{'Precision (Anomaly)':<22} | {prec_c:<20.4f} | {prec_p:<20.4f}")
-    print(f"{'Recall (Anomaly)':<22} | {rec_c:<20.4f} | {rec_p:<20.4f}")
-    print(f"{'F1-Score (Anomaly)':<22} | {f1_c:<20.4f} | {f1_p:<20.4f}")
-    print(f"{'ROC-AUC':<22} | {auc_val:<20.4f} | {auc_val:<20.4f}")
+    print(f"{'Overall Accuracy':<22} | {acc_t:<25.4f} | {acc_e:<25.4f}")
+    print(f"{'Balanced Accuracy':<22} | {bal_t:<25.4f} | {bal_e:<25.4f}")
+    print(f"{'Precision (Anomaly)':<22} | {prec_t:<25.4f} | {prec_e:<25.4f}")
+    print(f"{'Recall (Anomaly)':<22} | {rec_t:<25.4f} | {rec_e:<25.4f}")
+    print(f"{'F1-Score (Anomaly)':<22} | {f1_t:<25.4f} | {f1_e:<25.4f}")
+    print(f"{'ROC-AUC':<22} | {auc_val:<25.4f} | {auc_val:<25.4f}")
+    print(f"{'Average Precision':<22} | {ap_val:<25.4f} | {ap_val:<25.4f}")
     print("-" * 68)
 
-    print("\n[*] Báo cáo Phân loại Chi tiết (Ngưỡng Contamination):")
-    print(classification_report(y_test, y_pred_contam))
+    print("\n[*] Báo cáo Phân loại Chi tiết (Ngưỡng Lý thuyết 0.5000):")
+    print(classification_report(y_test, y_pred_theo))
+    cm_t = confusion_matrix(y_test, y_pred_theo)
+    print(f"[*] Confusion Matrix: TN={cm_t[0,0]}  FP={cm_t[0,1]}  FN={cm_t[1,0]}  TP={cm_t[1,1]}")
 
-    cm = confusion_matrix(y_test, y_pred_contam)
-    print(f"\n[*] Confusion Matrix: TN={cm[0,0]}  FP={cm[0,1]}  FN={cm[1,0]}  TP={cm[1,1]}")
+    print("\n[*] Báo cáo Phân loại Chi tiết (Ngưỡng Thực nghiệm):")
+    print(classification_report(y_test, y_pred_emp))
+    cm_e = confusion_matrix(y_test, y_pred_emp)
+    print(f"[*] Confusion Matrix: TN={cm_e[0,0]}  FP={cm_e[0,1]}  FN={cm_e[1,0]}  TP={cm_e[1,1]}")
 
-    # Ghi nhận kết quả vào metrics.csv
+    # Ghi nhận kết quả chuẩn hóa vào metrics.csv (23 trường chuẩn xác)
+    dataset_name = "Statlog_Shuttle_ODDS" if args.odds else "Statlog_Shuttle"
     mode_name = "ODDS_Benchmark" if args.odds else ("Full_58k_Tuned" if tune else "Full_58k_Base")
-    metrics_entry = pd.DataFrame([{
-        "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Mode": mode_name,
-        "N_Samples": len(df),
-        "N_Estimators": best_params["n_estimators"],
-        "Threshold": round(th_contam, 4),
-        "Accuracy": round(acc_c, 4),
-        "F1_Score": round(f1_c, 4),
-        "ROC_AUC": round(auc_val, 4)
-    }])
+    anomaly_classes_metric = "2,3,5,6,7" if args.odds else "2,3,4,5,6,7"
+
+    row_theo = {
+        "mode": mode_name,
+        "dataset": dataset_name,
+        "n_samples": len(df),
+        "n_features": len(feature_cols),
+        "train_size": len(X_train),
+        "test_size": len(X_test),
+        "normal_classes": "1",
+        "anomaly_classes": anomaly_classes_metric,
+        "random_state": random_state,
+        "n_estimators": best_params["n_estimators"],
+        "max_samples": best_params["max_samples"],
+        "max_features": best_params["max_features"],
+        "max_depth": best_model.max_depth,
+        "contamination": contam_str,
+        "threshold_type": "theoretical",
+        "threshold": round(th_theoretical, 6),
+        "accuracy": round(acc_t, 4),
+        "balanced_accuracy": round(bal_t, 4),
+        "precision": round(prec_t, 4),
+        "recall": round(rec_t, 4),
+        "f1": round(f1_t, 4),
+        "roc_auc": round(auc_val, 4),
+        "average_precision": round(ap_val, 4),
+    }
+
+    row_emp = {
+        "mode": mode_name,
+        "dataset": dataset_name,
+        "n_samples": len(df),
+        "n_features": len(feature_cols),
+        "train_size": len(X_train),
+        "test_size": len(X_test),
+        "normal_classes": "1",
+        "anomaly_classes": anomaly_classes_metric,
+        "random_state": random_state,
+        "n_estimators": best_params["n_estimators"],
+        "max_samples": best_params["max_samples"],
+        "max_features": best_params["max_features"],
+        "max_depth": best_model.max_depth,
+        "contamination": contam_str,
+        "threshold_type": "empirical",
+        "threshold": round(th_empirical, 6),
+        "accuracy": round(acc_e, 4),
+        "balanced_accuracy": round(bal_e, 4),
+        "precision": round(prec_e, 4),
+        "recall": round(rec_e, 4),
+        "f1": round(f1_e, 4),
+        "roc_auc": round(auc_val, 4),
+        "average_precision": round(ap_val, 4),
+    }
+
+    metrics_df = pd.DataFrame([row_theo, row_emp])
     metrics_path = "metrics.csv"
     if not os.path.exists(metrics_path):
-        metrics_entry.to_csv(metrics_path, index=False)
+        metrics_df.to_csv(metrics_path, index=False)
     else:
-        metrics_entry.to_csv(metrics_path, mode="a", header=False, index=False)
+        metrics_df.to_csv(metrics_path, mode="a", header=False, index=False)
 
     # Suy luận thử nghiệm qua Pipeline
     pipe = Pipeline(model=best_model)
     sample_s = float(pipe.anomaly_score(X_test.iloc[[0]].values)[0])
-    print(f"\n[+] Suy luận mẫu đầu: Score = {sample_s:.4f} -> {'BẤT THƯỜNG (1)' if sample_s >= th_contam else 'BÌNH THƯỜNG (0)'}")
+    print(f"\n[+] Suy luận mẫu đầu: Score = {sample_s:.4f} -> {'BẤT THƯỜNG (1)' if sample_s >= th_theoretical else 'BÌNH THƯỜNG (0)'}")
     print("=" * 60)
 
 
 if __name__ == "__main__":
     main()
+
