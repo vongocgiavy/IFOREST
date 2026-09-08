@@ -71,6 +71,13 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
     if len(X) != len(y):
         raise ValueError("X and y must have the same number of samples")
 
+    X_ndim = getattr(X, "ndim", np.asarray(X).ndim)
+    y_ndim = getattr(y, "ndim", np.asarray(y).ndim)
+    if X_ndim != 2:
+        raise ValueError("X must be a 2D array")
+    if y_ndim != 1:
+        raise ValueError("y must be a 1D array")
+
     if len(X) < 2:
         raise ValueError(f"Dataset must have at least 2 samples to split, got {len(X)}")
 

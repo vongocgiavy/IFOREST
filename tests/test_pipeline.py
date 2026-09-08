@@ -212,6 +212,44 @@ class TestIsolationForestPipeline(unittest.TestCase):
         self.assertTrue(np.allclose(sample_scores, -anomaly_scores))
         self.assertTrue(np.allclose(decision, 0.5 - anomaly_scores))
 
+    def test_train_test_split(self):
+        X = np.arange(1000).reshape(500, 2)
+        y = np.array([0] * 400 + [1] * 100)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42,
+        )
+        self.assertEqual(len(X_train), 400)
+        self.assertEqual(len(X_test), 100)
+        train_ids = set(map(tuple, X_train))
+        test_ids = set(map(tuple, X_test))
+        self.assertEqual(len(train_ids & test_ids), 0)
+
+    def test_invalid_hyperparameters(self):
+        with self.assertRaises(ValueError):
+            IsolationForest(n_estimators=0)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_samples=0)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_features=0)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_features=1.5)
+
+    def test_scores_are_finite(self):
+        rng = np.random.RandomState(42)
+        X = rng.normal(size=(100, 9))
+        model = IsolationForest(
+            n_estimators=10,
+            max_samples=32,
+            random_state=42,
+        )
+        model.fit(X)
+        scores = model.score_samples(X)
+        anomaly_scores = -scores
+        self.assertTrue(np.all(np.isfinite(scores)))
+        self.assertTrue(np.all(np.isfinite(anomaly_scores)))
+        self.assertTrue(np.all(anomaly_scores >= 0))
+        self.assertTrue(np.all(anomaly_scores <= 1))
+
     def test_15_hyperparameter_validation(self):
         """Kiểm tra bẫy lỗi các siêu tham số không hợp lệ."""
         with self.assertRaises(ValueError):
@@ -236,6 +274,8 @@ class TestIsolationForestPipeline(unittest.TestCase):
             train_test_split(np.zeros((10, 2)), np.zeros(8))
         with self.assertRaises(ValueError):
             train_test_split(np.zeros((1, 2)), np.zeros(1))
+        with self.assertRaises(ValueError):
+            train_test_split(np.zeros(10), np.zeros(10))
         with self.assertRaises(ValueError):
             threshold_from_contamination([0.1, 0.2], contamination=0.8)
 

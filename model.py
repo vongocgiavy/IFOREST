@@ -134,26 +134,17 @@ class IsolationForest:
 
     def __init__(self, n_estimators: int = 100, max_samples: Union[int, float, str] = "auto", max_features: float = 1.0,
                  contamination: Union[float, str] = "auto", random_state: int = 42):
-        if isinstance(n_estimators, bool) or not isinstance(n_estimators, int) or n_estimators <= 0:
+        if n_estimators <= 0:
             raise ValueError("n_estimators must be > 0")
 
-        if max_samples != "auto":
-            if isinstance(max_samples, bool):
-                raise ValueError("max_samples must be 'auto', int, or float")
-            elif isinstance(max_samples, float):
-                if not (0 < max_samples <= 1):
-                    raise ValueError("max_samples as float must be in (0, 1]")
-            elif isinstance(max_samples, int):
-                if max_samples <= 0:
-                    raise ValueError("max_samples as int must be > 0")
-            else:
-                raise ValueError("max_samples must be 'auto', int, or float")
+        if isinstance(max_samples, (int, float)) and max_samples <= 0:
+            raise ValueError("max_samples must be > 0")
 
-        if isinstance(max_features, bool) or not isinstance(max_features, (int, float)) or not (0 < max_features <= 1):
+        if not (0 < max_features <= 1):
             raise ValueError("max_features must be in (0, 1]")
 
         if contamination != "auto":
-            if isinstance(contamination, bool) or not isinstance(contamination, (int, float)) or not (0 < contamination < 0.5):
+            if not isinstance(contamination, (int, float)) or not (0 < contamination < 0.5):
                 raise ValueError("contamination must be in (0, 0.5)")
 
         self.n_estimators = n_estimators
@@ -162,11 +153,14 @@ class IsolationForest:
         self.contamination = contamination
         self.random_state = random_state
 
+        # Initialise max_depth based on provided max_samples (used for immediate checks).
         if self.max_samples == "auto":
-            self.max_depth = int(np.ceil(np.log2(256)))
+            # Default auto uses 256 as per original implementation
+            self.max_depth = int(math.ceil(math.log2(256)))
         elif isinstance(self.max_samples, int):
-            self.max_depth = int(np.ceil(np.log2(self.max_samples)))
+            self.max_depth = int(math.ceil(math.log2(max(self.max_samples, 2))))
         else:
+            # For fractional float values the actual depth depends on dataset size and will be set in fit()
             self.max_depth = None
 
         self.trees: List[IsolationTree] = []
@@ -212,15 +206,19 @@ class IsolationForest:
         self.n_features_in_ = n_features
         rng = np.random.RandomState(self.random_state)
 
-        # 1. Xác định kích thước mẫu con psi
+        # 1. Xác định kích thước mẫu con psi và tính max_depth dựa trên cấu hình max_samples
         if self.max_samples == "auto":
             self.max_samples_actual_ = min(256, n_samples)
+            effective_max_samples = 256
         elif isinstance(self.max_samples, float) and 0.0 < self.max_samples <= 1.0:
             self.max_samples_actual_ = max(1, int(round(self.max_samples * n_samples)))
+            effective_max_samples = int(round(self.max_samples * n_samples))
         else:
             self.max_samples_actual_ = min(int(self.max_samples), n_samples)
+            effective_max_samples = int(self.max_samples)
 
-        self.max_depth = int(math.ceil(math.log2(max(self.max_samples_actual_, 2))))
+        # max_depth dựa trên effective_max_samples (theoretically ceil(log2(max_samples)))
+        self.max_depth = int(math.ceil(math.log2(max(effective_max_samples, 2))))
         self.c_psi_ = c_factor(self.max_samples_actual_)
 
         # 2. Xác định số thuộc tính trích chọn cho mỗi cây (Feature Bagging per Tree)

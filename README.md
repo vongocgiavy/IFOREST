@@ -119,7 +119,11 @@ print(f"Anomaly Score: {score:.4f} -> Trạng thái: {'BẤT THƯỜNG' if is_an
 1. **Pure NumPy 100% (Zero Scikit-Learn):** Tự lập trình toàn bộ thuật toán Isolation Forest (`Node`, `IsolationTree`, `IsolationForest`, `c_factor`), cấu trúc Pipeline và toàn bộ hệ thống Metrics.
 2. **Chuẩn xác theo bài báo gốc Liu et al. (2008):**
    - Không hardcode tỷ lệ bất thường: `contamination="auto"` sử dụng ngưỡng quyết định lý thuyết $s \ge 0.5$.
-   - **Feature subsampling:** Mô hình hỗ trợ feature subsampling theo từng cây thông qua `max_features`. Trong cấu hình thí nghiệm chính, `max_features=1.0`, vì vậy mỗi cây sử dụng toàn bộ 9 thuộc tính.
+   - **Feature subsampling:** Mô hình hỗ trợ feature subsampling theo từng cây thông qua `max_features`. Trong cấu hình thí nghiệm chính, `max_features = 1.0`, vì vậy mỗi cây sử dụng toàn bộ 9 thuộc tính. Feature subsampling chỉ được kích hoạt khi `max_features < 1.0`.
    - Tại mỗi node, chọn ngẫu nhiên đều 1 thuộc tính từ tập thuộc tính có thể phân hoạch ($x_{\min} < x_{\max}$).
-3. **Bộ tiện ích và kiểm định hoàn chỉnh:** Hỗ trợ đầy đủ `score_samples`, `decision_function` (âm = bất thường), `fit_predict`, xác thực số chiều `n_features_in_`, bẫy lỗi `NaN/Inf`, và xác thực đầu vào nghiêm ngặt.
-4. **Tính Tái lập & Minh bạch (Reproducibility):** Ghi nhận đầy đủ siêu tham số, kích thước mẫu, tỷ lệ bất thường và phân định rõ loại ngưỡng trong `metrics.csv`.
+3. **Phân chia dữ liệu & Tinh chỉnh chuẩn khoa học:**
+   - Thí nghiệm chính sử dụng stratified 80/20 train-test split với `random_state=42` (Train: 46,400 mẫu, Test: 11,600 mẫu).
+   - `StratifiedKFold` 3-fold được sử dụng cho quá trình tuning trên tập Train, không phải để thay thế test set cuối cùng.
+   - Kết quả Full Shuttle và ODDS Benchmark là hai thí nghiệm riêng biệt.
+4. **Bộ tiện ích và kiểm định hoàn chỉnh:** Hỗ trợ đầy đủ `score_samples`, `decision_function` (âm = bất thường), `fit_predict`, xác thực số chiều `n_features_in_`, bẫy lỗi `NaN/Inf`, và xác thực đầu vào nghiêm ngặt.
+5. **Tính Tái lập & Minh bạch (Reproducibility):** Ghi nhận đầy đủ siêu tham số, kích thước mẫu, tỷ lệ bất thường và phân định rõ loại ngưỡng trong `metrics.csv`.
