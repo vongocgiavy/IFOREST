@@ -164,7 +164,7 @@ class TestIsolationForestPipeline(unittest.TestCase):
         self.assertEqual(len(X_test), 11600, f"Test phải có đúng 11,600 mẫu, hiện là {len(X_test)}")
         train_indices = set(X_train.index)
         test_indices = set(X_test.index)
-        self.assertTrue(train_indices.isdisjoint(test_indices), "Data leakage: train/test indices overlap!")
+        self.assertTrue(train_indices.isdisjoint(test_indices), "Data overlap: train/test indices overlap!")
 
     def test_10_iforest_config(self):
         """Kiểm tra cấu hình mô hình IsolationForest."""

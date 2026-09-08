@@ -127,7 +127,7 @@ class IsolationForest:
         Tỷ lệ thuộc tính trích chọn ngẫu nhiên cho mỗi cây (Feature Bagging per Tree).
     contamination : float hoặc "auto", mặc định="auto"
         - "auto": Ngưỡng quyết định lý thuyết s >= 0.5 từ bài báo gốc Liu et al. (2008).
-        - float (0, 0.5]: Ước lượng ngưỡng phân vị từ điểm anomaly_score trên tập train.
+        - float trong (0, 0.5): Ước lượng ngưỡng phân vị từ điểm anomaly_score trên tập train.
     random_state : int, mặc định=42
         Khởi tạo seed số ngẫu nhiên đảm bảo tính tái lập (reproducibility).
     """

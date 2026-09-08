@@ -1,10 +1,10 @@
 # Phát hiện Bất thường Cảm biến Tàu Con thoi (NASA Shuttle) bằng Isolation Forest (Build Tay - Zero Sklearn)
 
-Dự án Machine Learning chuẩn nghiên cứu học thuật: Tự xây dựng từ số 0 (**From Scratch - Pure NumPy**) toàn bộ thuật toán **Isolation Forest** (theo bài báo gốc Liu et al., 2008) thuần túy trên dữ liệu cảm biến gốc (không lồng ghép StandardScaler, không PCA), phân chia Stratified Train/Test 80/20 (46,400 train / 11,600 test) chống rò rỉ dữ liệu.
+Dự án Machine Learning chuẩn nghiên cứu học thuật: Tự xây dựng từ số 0 (**From Scratch - Pure NumPy**) toàn bộ thuật toán **Isolation Forest** (theo bài báo gốc Liu et al., 2008) thuần túy trên dữ liệu cảm biến gốc (không lồng ghép StandardScaler, không PCA), phân chia Stratified Train/Test 80/20 (46,400 train / 11,600 test) bảo đảm không trùng lặp quan sát giữa hai tập.
 
 Thuật toán Isolation Forest cốt lõi được huấn luyện hoàn toàn theo nguyên lý **không giám sát (unsupervised)**: các cây cô lập (iTree) được dựng hoàn toàn ngẫu nhiên trên không gian đặc trưng $X$ mà không sử dụng bất kỳ thông tin nhãn $y$ nào. Quy trình thực nghiệm tuân thủ giao thức chuẩn mực:
 - **Tập Train (Semi-supervised / Label-guided validation):** Nhãn tập Train được sử dụng để tinh chỉnh siêu tham số (Hyperparameter Tuning qua Stratified 3-Fold CV tối ưu F1-score) và tính toán ngưỡng thực nghiệm (Empirical Quantile Threshold theo tỷ lệ contamination của tập train).
-- **Tập Test (Unbiased Evaluation):** Tập kiểm thử hoàn toàn cô lập, độc lập và không bị rò rỉ dữ liệu (`train_indices.isdisjoint(test_indices)`), dùng để đánh giá khách quan hiệu năng mô hình với các chỉ số ROC-AUC (Wilcoxon Mann-Whitney U), F1-Score, Balanced Accuracy, Precision, Recall, Average Precision, Confusion Matrix mà **không dùng thư viện `sklearn`**.
+- **Tập Test (Unbiased Evaluation):** Tập kiểm thử hoàn toàn độc lập, không trùng lặp mẫu với tập train (`train_indices.isdisjoint(test_indices)`), dùng để đánh giá khách quan hiệu năng mô hình với các chỉ số ROC-AUC (Wilcoxon Mann-Whitney U), F1-Score, Balanced Accuracy, Precision, Recall, Average Precision, Confusion Matrix mà **không dùng thư viện `sklearn`**.
 
 ---
 
@@ -57,7 +57,7 @@ py -m pip install -r requirements.txt
 ```powershell
 py run_pipeline.py
 ```
-- Phân chia tập dữ liệu theo tỷ lệ Stratified 80/20: **46,400 mẫu Huấn luyện (Train)** và **11,600 mẫu Kiểm thử (Test)**, kiểm tra tính toàn vẹn và đảm bảo không có rò rỉ dữ liệu (`train_indices.isdisjoint(test_indices)`).
+- Phân chia tập dữ liệu theo tỷ lệ Stratified 80/20: **46,400 mẫu Huấn luyện (Train)** và **11,600 mẫu Kiểm thử (Test)**, kiểm tra tính toàn vẹn và đảm bảo không trùng lặp mẫu giữa hai tập (`train_indices.isdisjoint(test_indices)`).
 - Đánh giá độc lập trên cả 2 ngưỡng:
   - **Theoretical_Auto**: Ngưỡng lý thuyết $0.500000$ theo bài báo gốc Liu et al. (2008).
   - **Train_Contamination**: Ngưỡng thực nghiệm trích xuất từ phân vị $(1 - \text{contamination})$ trên tập Train (không sử dụng nhãn test để tránh test leakage).

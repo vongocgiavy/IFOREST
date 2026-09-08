@@ -130,11 +130,11 @@ def train_test_split(X, y, test_size: float = 0.2, random_state: int = 42, strat
     assert len(X_tr) + len(X_te) == len(X), "Sum of split sizes does not equal original size"
     assert len(y_tr) + len(y_te) == len(y), "Sum of label split sizes does not equal original size"
 
-    # Kiểm tra rò rỉ dữ liệu (Train/Test indices disjoint)
+    # Kiểm tra tính phân lập mẫu (Train/Test indices disjoint)
     if isinstance(X, (pd.DataFrame, pd.Series)):
-        assert set(X_tr.index).isdisjoint(set(X_te.index)), "Data leakage: train/test indices overlap!"
+        assert set(X_tr.index).isdisjoint(set(X_te.index)), "Data overlap: train/test indices overlap!"
     else:
-        assert set(train_indices).isdisjoint(set(test_indices)), "Data leakage: train/test indices overlap!"
+        assert set(train_indices).isdisjoint(set(test_indices)), "Data overlap: train/test indices overlap!"
 
     return X_tr, X_te, y_tr, y_te
 
@@ -531,7 +531,7 @@ def main():
     if isinstance(X_train, (pd.DataFrame, pd.Series)):
         train_indices = set(X_train.index)
         test_indices = set(X_test.index)
-        assert train_indices.isdisjoint(test_indices), "Data leakage: train/test indices overlap!"
+        assert train_indices.isdisjoint(test_indices), "Data overlap: train/test indices overlap!"
 
     print(f"Train samples: {len(X_train):,}")
     print(f"Test samples : {len(X_test):,}")
