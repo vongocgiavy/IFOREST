@@ -173,13 +173,35 @@ class StratifiedKFold:
         self.random_state = random_state
 
     def split(self, X, y):
+        if X is None or y is None:
+            raise ValueError("X and y cannot be None")
+
+        X_len = len(X) if hasattr(X, "__len__") else (X.shape[0] if hasattr(X, "shape") else None)
+        y_len = len(y) if hasattr(y, "__len__") else (y.shape[0] if hasattr(y, "shape") else None)
+
+        if X_len is None or y_len is None or X_len != y_len:
+            raise ValueError(f"X và y phải có cùng độ dài (n_samples). Nhận được len(X)={X_len}, len(y)={y_len}.")
+
+        if y_len < self.n_splits:
+            raise ValueError(f"Số lượng mẫu ({y_len}) không thể nhỏ hơn số fold n_splits={self.n_splits}.")
+
+        y_arr = np.asarray(y)
+        unique_classes, counts = np.unique(y_arr, return_counts=True)
+        if len(unique_classes) < 2:
+            raise ValueError(f"StratifiedKFold yêu cầu ít nhất 2 lớp khác nhau để phân tầng, hiện chỉ có {len(unique_classes)} lớp.")
+
+        min_class_count = int(np.min(counts))
+        if min_class_count < self.n_splits:
+            raise ValueError(
+                f"Lớp có ít mẫu nhất chỉ có {min_class_count} phần tử, nhỏ hơn số fold n_splits={self.n_splits}."
+            )
+
         if isinstance(self.random_state, np.random.RandomState):
             rng = self.random_state
         else:
             rng = np.random.RandomState(self.random_state)
-        y_arr = np.asarray(y)
         folds = [[] for _ in range(self.n_splits)]
-        for cls in np.unique(y_arr):
+        for cls in unique_classes:
             cls_idx = np.where(y_arr == cls)[0]
             if self.shuffle:
                 rng.shuffle(cls_idx)

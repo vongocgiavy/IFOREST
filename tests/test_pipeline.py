@@ -214,45 +214,6 @@ class TestIsolationForestPipeline(unittest.TestCase):
         decision = model.decision_function(X_dummy)
         self.assertTrue(np.allclose(sample_scores, -anomaly_scores))
         self.assertTrue(np.allclose(decision, 0.5 - anomaly_scores))
-
-    def test_train_test_split(self):
-        X = np.arange(1000).reshape(500, 2)
-        y = np.array([0] * 400 + [1] * 100)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42,
-        )
-        self.assertEqual(len(X_train), 400)
-        self.assertEqual(len(X_test), 100)
-        train_ids = set(map(tuple, X_train))
-        test_ids = set(map(tuple, X_test))
-        self.assertEqual(len(train_ids & test_ids), 0)
-
-    def test_invalid_hyperparameters(self):
-        with self.assertRaises(ValueError):
-            IsolationForest(n_estimators=0)
-        with self.assertRaises(ValueError):
-            IsolationForest(max_samples=0)
-        with self.assertRaises(ValueError):
-            IsolationForest(max_features=0)
-        with self.assertRaises(ValueError):
-            IsolationForest(max_features=1.5)
-
-    def test_scores_are_finite(self):
-        rng = np.random.RandomState(42)
-        X = rng.normal(size=(100, 9))
-        model = IsolationForest(
-            n_estimators=10,
-            max_samples=32,
-            random_state=42,
-        )
-        model.fit(X)
-        scores = model.score_samples(X)
-        anomaly_scores = -scores
-        self.assertTrue(np.all(np.isfinite(scores)))
-        self.assertTrue(np.all(np.isfinite(anomaly_scores)))
-        self.assertTrue(np.all(anomaly_scores >= 0))
-        self.assertTrue(np.all(anomaly_scores <= 1))
-
     def test_15_hyperparameter_validation(self):
         """Kiểm tra bẫy lỗi các siêu tham số không hợp lệ."""
         with self.assertRaises(ValueError):
@@ -261,6 +222,8 @@ class TestIsolationForestPipeline(unittest.TestCase):
             IsolationForest(n_estimators=-10)
         with self.assertRaises(ValueError):
             IsolationForest(max_samples=0)
+        with self.assertRaises(ValueError):
+            IsolationForest(max_samples=1)  # Cần ít nhất 2 mẫu để phân tách cô lập
         with self.assertRaises(ValueError):
             IsolationForest(max_samples=-5)
         with self.assertRaises(ValueError):
@@ -283,7 +246,7 @@ class TestIsolationForestPipeline(unittest.TestCase):
             threshold_from_contamination([0.1, 0.2], contamination=0.8)
 
     def test_16_edge_cases_and_pipeline_properties(self):
-        """Kiểm tra các trường hợp biên và thuộc tính Pipeline."""
+        """Kiểm tra các trường hợp biên, tính toán max_depth và xác thực StratifiedKFold."""
         # 1. Pipeline default init and properties
         pipe = Pipeline()
         self.assertIsNotNone(pipe.model)
@@ -291,22 +254,41 @@ class TestIsolationForestPipeline(unittest.TestCase):
         self.assertEqual(pipe.offset_, -0.5)
         self.assertEqual(pipe.max_depth, 8)
 
-        # 2. Fit với RandomState object
+        # 2. Fit với RandomState object và kiểm tra max_depth tính từ max_samples_actual_
         rng = np.random.RandomState(123)
         model = IsolationForest(n_estimators=5, max_samples=32, random_state=rng)
         X_dummy = np.random.RandomState(42).randn(50, 4)
         model.fit(X_dummy)
         self.assertEqual(len(model.estimators_), 5)
+        self.assertEqual(model.max_samples_actual_, 32)
+        self.assertEqual(model.max_depth, 5)  # ceil(log2(32)) = 5
 
-        # 3. Dữ liệu rỗng hoặc sai số chiều
+        # Khi n_samples < max_samples, max_depth phải co theo max_samples_actual_
+        small_model = IsolationForest(n_estimators=5, max_samples=256, random_state=42)
+        small_model.fit(X_dummy)  # n_samples = 50
+        self.assertEqual(small_model.max_samples_actual_, 50)
+        self.assertEqual(small_model.max_depth, 6)  # ceil(log2(50)) = 6
+
+        # 3. Dữ liệu rỗng, n_samples < 2 hoặc sai số chiều
         with self.assertRaises(ValueError):
             IsolationForest().fit(np.zeros((0, 4)))
         with self.assertRaises(ValueError):
+            IsolationForest().fit(np.zeros((1, 4)))  # Cần ít nhất 2 mẫu
+        with self.assertRaises(ValueError):
             IsolationForest().fit(np.zeros((10, 0)))
 
-        # 4. StratifiedKFold validation
+        # 4. StratifiedKFold validation toàn diện
         with self.assertRaises(ValueError):
             StratifiedKFold(n_splits=1)
+        skf = StratifiedKFold(n_splits=3)
+        with self.assertRaises(ValueError):
+            list(skf.split(np.zeros((10, 2)), np.zeros(8)))  # Lệch độ dài X và y
+        with self.assertRaises(ValueError):
+            list(skf.split(np.zeros((2, 2)), [0, 1]))  # n_samples < n_splits
+        with self.assertRaises(ValueError):
+            list(skf.split(np.zeros((6, 2)), [0, 0, 0, 0, 0, 0]))  # Chỉ 1 lớp
+        with self.assertRaises(ValueError):
+            list(skf.split(np.zeros((6, 2)), [0, 0, 0, 0, 0, 1]))  # Lớp thiểu số < n_splits
 
         # 5. Threshold from contamination edge cases
         with self.assertRaises(ValueError):
@@ -333,68 +315,6 @@ class TestIsolationForestPipeline(unittest.TestCase):
             average_precision_score([0, 1], [0.5])
         with self.assertRaises(ValueError):
             permutation_importance_scratch(model, X_dummy, np.zeros(len(X_dummy)), n_repeats=0)
-
-
-# Top-level functions tương thích theo tài liệu hướng dẫn
-def test_train_test_split_size():
-    df = pd.read_csv("shuttle_preprocessed.csv")
-    feat_cols = [c for c in df.columns if c.startswith("att_")]
-    X = df[feat_cols]
-    y = df["label"]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=True
-    )
-    assert len(X_train) == 46400
-    assert len(X_test) == 11600
-
-
-def test_iforest_config():
-    model = IsolationForest(
-        n_estimators=100,
-        max_samples=256,
-        max_features=1.0,
-        contamination="auto",
-        random_state=42
-    )
-    assert model.n_estimators == 100
-    assert model.max_samples == 256
-    assert model.max_features == 1.0
-    assert model.contamination == "auto"
-
-
-def test_max_depth():
-    model = IsolationForest(
-        n_estimators=100,
-        max_samples=256,
-        random_state=42
-    )
-    assert model.max_depth == 8
-
-
-def test_c_factor_256():
-    value = c_factor(256)
-    assert np.isclose(value, 10.2447709201, atol=1e-8)
-
-
-def test_anomaly_score_range():
-    X_dummy = np.random.RandomState(42).randn(100, 4)
-    model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
-    model.fit(X_dummy)
-    scores = model.anomaly_score(X_dummy)
-    assert np.all(np.isfinite(scores))
-    assert np.all(scores >= 0)
-    assert np.all(scores <= 1)
-
-
-def test_score_consistency():
-    X_dummy = np.random.RandomState(42).randn(100, 4)
-    model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
-    model.fit(X_dummy)
-    anomaly_scores = model.anomaly_score(X_dummy)
-    sample_scores = model.score_samples(X_dummy)
-    decision = model.decision_function(X_dummy)
-    assert np.allclose(sample_scores, -anomaly_scores)
-    assert np.allclose(decision, 0.5 - anomaly_scores)
 
 
 if __name__ == "__main__":

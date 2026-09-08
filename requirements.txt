@@ -10,3 +10,6 @@ pandas>=2.0.0
 # Trực quan hóa dữ liệu (Visualization)
 matplotlib>=3.7.0
 seaborn>=0.12.0
+
+# Kiểm thử tự động (Testing)
+pytest>=7.0.0

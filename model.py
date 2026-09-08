@@ -142,6 +142,8 @@ class IsolationForest:
                 raise ValueError("max_samples cannot be boolean")
             if not isinstance(max_samples, (int, float)) or max_samples <= 0:
                 raise ValueError("max_samples must be > 0")
+            if isinstance(max_samples, int) and max_samples < 2:
+                raise ValueError("max_samples as integer must be >= 2")
             if isinstance(max_samples, float) and max_samples > 1.0:
                 raise ValueError("max_samples as float must be in (0, 1]")
 
@@ -158,14 +160,12 @@ class IsolationForest:
         self.contamination = contamination
         self.random_state = random_state
 
-        # Initialise max_depth based on provided max_samples (used for immediate checks).
+        # Initialise max_depth based on provided max_samples (used for immediate checks, will update in fit()).
         if self.max_samples == "auto":
-            # Default auto uses 256 as per original implementation
             self.max_depth = int(math.ceil(math.log2(256)))
         elif isinstance(self.max_samples, int):
-            self.max_depth = int(math.ceil(math.log2(max(self.max_samples, 2))))
+            self.max_depth = int(math.ceil(math.log2(self.max_samples)))
         else:
-            # For fractional float values the actual depth depends on dataset size and will be set in fit()
             self.max_depth = None
 
         self.trees: List[IsolationTree] = []
@@ -214,25 +214,25 @@ class IsolationForest:
         """Huấn luyện tập hợp cây Isolation Trees trên dữ liệu X (Unsupervised, bỏ qua y)."""
         X_arr = self._validate_X(X, check_features=False)
         n_samples, n_features = X_arr.shape
+        if n_samples < 2:
+            raise ValueError(f"Dữ liệu huấn luyện cần ít nhất 2 mẫu để phân tách cô lập (n_samples >= 2), hiện có {n_samples} mẫu.")
         self.n_features_in_ = n_features
         if isinstance(self.random_state, np.random.RandomState):
             rng = self.random_state
         else:
             rng = np.random.RandomState(self.random_state)
 
-        # 1. Xác định kích thước mẫu con psi và tính max_depth dựa trên cấu hình max_samples
+        # 1. Xác định kích thước mẫu con psi (bảo đảm psi >= 2) và tính max_depth theo bài báo Liu et al. (2008)
         if self.max_samples == "auto":
-            self.max_samples_actual_ = min(256, n_samples)
-            effective_max_samples = 256
+            self.max_samples_actual_ = max(2, min(256, n_samples))
         elif isinstance(self.max_samples, float) and 0.0 < self.max_samples <= 1.0:
-            self.max_samples_actual_ = max(1, int(round(self.max_samples * n_samples)))
-            effective_max_samples = int(round(self.max_samples * n_samples))
+            frac_samples = int(round(self.max_samples * n_samples))
+            self.max_samples_actual_ = max(2, min(frac_samples, n_samples))
         else:
-            self.max_samples_actual_ = min(int(self.max_samples), n_samples)
-            effective_max_samples = int(self.max_samples)
+            self.max_samples_actual_ = max(2, min(int(self.max_samples), n_samples))
 
-        # max_depth dựa trên effective_max_samples (theoretically ceil(log2(max_samples)))
-        self.max_depth = int(math.ceil(math.log2(max(effective_max_samples, 2))))
+        # max_depth dựa trên kích thước mẫu thực tế của mỗi cây psi = max_samples_actual_ (Liu et al., 2008: h_max = ceil(log2(psi)))
+        self.max_depth = int(math.ceil(math.log2(self.max_samples_actual_)))
         self.c_psi_ = c_factor(self.max_samples_actual_)
 
         # 2. Xác định số thuộc tính trích chọn cho mỗi cây (Feature Bagging per Tree)
