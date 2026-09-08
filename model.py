@@ -1,0 +1,271 @@
+"""
+ISOLATION FOREST MODEL FROM SCRATCH (PURE NUMPY)
+Chuẩn thuật toán Isolation Forest (Liu et al., 2008) - Zero Scikit-Learn Dependency.
+"""
+
+import math
+from typing import List, Optional, Union
+import numpy as np
+
+
+def c_factor(n: int) -> float:
+    """Độ dài đường đi trung bình tìm kiếm không thành công trong BST (Liu et al., 2008)."""
+    if n <= 1:
+        return 0.0
+    if n == 2:
+        return 1.0
+    gamma = 0.5772156649015329  # Euler-Mascheroni constant
+    return 2.0 * (math.log(n - 1.0) + gamma) - (2.0 * (n - 1.0) / n)
+
+
+class Node:
+    """Nút cây cô lập: Nút trong (chia thuộc tính) hoặc Nút lá (lưu kích thước mẫu & leaf_adj)."""
+    __slots__ = ['left', 'right', 'split_feat', 'split_val', 'size', 'is_leaf', 'leaf_adj']
+
+    def __init__(self, left=None, right=None, split_feat=None, split_val=None, size: int = 0, is_leaf: bool = False):
+        self.left = left
+        self.right = right
+        self.split_feat = split_feat
+        self.split_val = split_val
+        self.size = size
+        self.is_leaf = is_leaf
+        self.leaf_adj = c_factor(size) if is_leaf else 0.0
+
+
+class IsolationTree:
+    """Cây cô lập nhị phân xây dựng bằng phân hoạch ngẫu nhiên không gian (Algorithm 2, Liu et al., 2008)."""
+
+    def __init__(self, max_depth: int, features_subset: Optional[np.ndarray] = None, rng: Optional[np.random.RandomState] = None, random_state: int = 42):
+        self.max_depth = max_depth
+        self.features_subset = features_subset
+        if rng is not None:
+            self.rng = rng
+        elif random_state is not None:
+            self.rng = np.random.RandomState(random_state)
+        else:
+            self.rng = np.random.RandomState()
+        self.root: Optional[Node] = None
+
+    def fit(self, X: np.ndarray):
+        self.root = self._build_tree(X, current_depth=0)
+        return self
+
+    def _build_tree(self, X: np.ndarray, current_depth: int) -> Node:
+        n_samples, n_features = X.shape
+        if current_depth >= self.max_depth or n_samples <= 1:
+            return Node(size=n_samples, is_leaf=True)
+
+        candidate_feats = self.features_subset if self.features_subset is not None else np.arange(n_features)
+        sub_X = X[:, candidate_feats]
+        col_mins = np.min(sub_X, axis=0)
+        col_maxs = np.max(sub_X, axis=0)
+        valid_idx = np.where(col_mins < col_maxs)[0]
+
+        if len(valid_idx) == 0:
+            return Node(size=n_samples, is_leaf=True)
+
+        # Chọn ngẫu nhiên đều 1 thuộc tính từ tập các thuộc tính hợp lệ (Algorithm 2, Liu et al., 2008)
+        pick = int(self.rng.choice(valid_idx))
+        chosen_feat = int(candidate_feats[pick])
+        feat_min, feat_max = float(col_mins[pick]), float(col_maxs[pick])
+
+        split_val = float(self.rng.uniform(feat_min, feat_max))
+        left_mask = X[:, chosen_feat] < split_val
+        n_left = int(np.count_nonzero(left_mask))
+
+        if n_left == 0 or n_left == n_samples:
+            return Node(size=n_samples, is_leaf=True)
+
+        return Node(
+            left=self._build_tree(X[left_mask], current_depth + 1),
+            right=self._build_tree(X[~left_mask], current_depth + 1),
+            split_feat=chosen_feat,
+            split_val=split_val,
+            size=n_samples,
+            is_leaf=False
+        )
+
+    def compute_path_lengths(self, X: np.ndarray) -> np.ndarray:
+        """Tính toán độ dài đường đi h(x) theo lô (Batch Traversal với Stack lặp tối ưu)."""
+        n_samples = len(X)
+        lengths = np.zeros(n_samples, dtype=np.float64)
+        if self.root is None:
+            return lengths
+
+        stack = [(np.arange(n_samples), self.root, 0)]
+
+        while stack:
+            indices, curr_node, depth = stack.pop()
+            if len(indices) == 0 or curr_node is None:
+                continue
+            if curr_node.is_leaf:
+                lengths[indices] = depth + curr_node.leaf_adj
+                continue
+            if curr_node.split_feat is None or curr_node.split_val is None:
+                continue
+            col_vals = X[indices, curr_node.split_feat]
+            mask = col_vals < curr_node.split_val
+            if curr_node.right is not None:
+                stack.append((indices[~mask], curr_node.right, depth + 1))
+            if curr_node.left is not None:
+                stack.append((indices[mask], curr_node.left, depth + 1))
+
+        return lengths
+
+
+class IsolationForest:
+    """
+    Thuật toán Isolation Forest tự lập trình (Liu et al., 2008) - 100% Pure NumPy.
+    
+    Tham số:
+    ---------
+    n_estimators : int, mặc định=100
+        Số lượng cây cô lập iTree trong rừng.
+    max_samples : int, float hoặc "auto", mặc định="auto"
+        Số lượng mẫu rút trích để xây dựng mỗi cây (mặc định min(256, n_samples)).
+    max_features : float, mặc định=1.0
+        Tỷ lệ thuộc tính trích chọn ngẫu nhiên cho mỗi cây (Feature Bagging per Tree).
+    contamination : float hoặc "auto", mặc định="auto"
+        - "auto": Ngưỡng quyết định lý thuyết s >= 0.5 từ bài báo gốc Liu et al. (2008).
+        - float (0, 0.5]: Ước lượng ngưỡng phân vị từ điểm anomaly_score trên tập train.
+    random_state : int, mặc định=42
+        Khởi tạo seed số ngẫu nhiên đảm bảo tính tái lập (reproducibility).
+    """
+
+    def __init__(self, n_estimators: int = 100, max_samples: Union[int, float, str] = "auto", max_features: float = 1.0,
+                 contamination: Union[float, str] = "auto", random_state: int = 42):
+        self.n_estimators = n_estimators
+        self.max_samples = max_samples
+        self.max_features = max_features
+        self.contamination = contamination
+        self.random_state = random_state
+        self.trees: List[IsolationTree] = []
+        self.max_samples_actual_ = 256
+        self.c_psi_ = 1.0
+        self.threshold_ = 0.5
+        self.offset_ = -0.5
+        self.n_features_in_: Optional[int] = None
+
+
+    def _validate_X(self, X, check_features: bool = False) -> np.ndarray:
+        """Kiểm tra và tiền xác thực định dạng dữ liệu đầu vào (NaN, Inf, số chiều)."""
+        if hasattr(X, "values"):
+            X_arr = np.asarray(X.values, dtype=np.float64)
+        else:
+            X_arr = np.asarray(X, dtype=np.float64)
+
+        if X_arr.ndim != 2:
+            raise ValueError(f"Dữ liệu đầu vào phải là mảng 2 chiều (n_samples, n_features), nhận được {X_arr.ndim} chiều.")
+
+        if not np.all(np.isfinite(X_arr)):
+            raise ValueError("Dữ liệu đầu vào chứa giá trị không hợp lệ (NaN hoặc Inf).")
+
+        if check_features:
+            if self.n_features_in_ is None:
+                raise ValueError("Mô hình chưa được huấn luyện. Hãy gọi 'fit(X)' trước.")
+            if X_arr.shape[1] != self.n_features_in_:
+                raise ValueError(
+                    f"Số lượng thuộc tính không khớp: mô hình được fit với {self.n_features_in_} thuộc tính, "
+                    f"nhưng dữ liệu truyền vào có {X_arr.shape[1]} thuộc tính."
+                )
+        return X_arr
+
+    @property
+    def estimators_(self):
+        """Danh sách các cây cô lập đã huấn luyện (Scikit-Learn convention)."""
+        return self.trees
+
+    def fit(self, X, y=None):
+        """Huấn luyện tập hợp cây Isolation Trees trên dữ liệu X (Unsupervised, bỏ qua y)."""
+        X_arr = self._validate_X(X, check_features=False)
+        n_samples, n_features = X_arr.shape
+        self.n_features_in_ = n_features
+        rng = np.random.RandomState(self.random_state)
+
+        # 1. Xác định kích thước mẫu con psi
+        if self.max_samples == "auto":
+            self.max_samples_actual_ = min(256, n_samples)
+        elif isinstance(self.max_samples, float) and 0.0 < self.max_samples <= 1.0:
+            self.max_samples_actual_ = max(1, int(round(self.max_samples * n_samples)))
+        else:
+            self.max_samples_actual_ = min(int(self.max_samples), n_samples)
+
+        max_depth = int(math.ceil(math.log2(max(self.max_samples_actual_, 2))))
+        self.c_psi_ = c_factor(self.max_samples_actual_)
+
+        # 2. Xác định số thuộc tính trích chọn cho mỗi cây (Feature Bagging per Tree)
+        k_feat = max(1, int(round(self.max_features * n_features)))
+
+        self.trees = []
+        for _ in range(self.n_estimators):
+            sub_idx = rng.choice(n_samples, size=self.max_samples_actual_, replace=False)
+            feat_subset = rng.choice(n_features, size=k_feat, replace=False) if k_feat < n_features else None
+            tree = IsolationTree(max_depth=max_depth, features_subset=feat_subset, rng=rng)
+            tree.fit(X_arr[sub_idx])
+            self.trees.append(tree)
+
+        # 3. Xác định ngưỡng theo chuẩn tổng quát (không hardcode bất kỳ dataset nào)
+        if self.contamination == "auto":
+            self.threshold_ = 0.5  # Ngưỡng lý thuyết tự nhiên bài báo gốc Liu et al. (2008)
+            self.offset_ = -0.5
+        elif isinstance(self.contamination, (int, float)):
+            contam_val = float(self.contamination)
+            if not (0.0 < contam_val <= 0.5):
+                raise ValueError(f"contamination phải nằm trong khoảng (0, 0.5], hiện là {contam_val}")
+            train_scores = self.anomaly_score(X_arr)
+            self.threshold_ = float(np.percentile(train_scores, 100.0 * (1.0 - contam_val)))
+            self.offset_ = -self.threshold_
+        else:
+            raise ValueError(f"contamination không hợp lệ: {self.contamination}. Phải là 'auto' hoặc số thực trong khoảng (0, 0.5]")
+
+        return self
+
+    def anomaly_score(self, X) -> np.ndarray:
+        """
+        Tính toán Anomaly Score s(x, psi) = 2^(- E(h(x)) / c(psi)) theo Liu et al. (2008).
+        Khoảng giá trị [0, 1]. Điểm càng CAO (tiến tới 1.0) càng BẤT THƯỜNG.
+        """
+        X_arr = self._validate_X(X, check_features=True)
+        if not self.trees or self.c_psi_ == 0.0:
+            return np.zeros(len(X_arr))
+
+        path_lengths = np.zeros(len(X_arr), dtype=np.float64)
+        for tree in self.trees:
+            path_lengths += tree.compute_path_lengths(X_arr)
+
+        avg_path_length = path_lengths / len(self.trees)
+        return np.power(2.0, -avg_path_length / self.c_psi_)
+
+    def score_samples(self, X) -> np.ndarray:
+        """
+        Trả về điểm đối nghịch: -anomaly_score(X).
+        Quy ước chuẩn: Giá trị càng THẤP (càng âm) càng BẤT THƯỜNG.
+        """
+        return -self.anomaly_score(X)
+
+    def decision_function(self, X) -> np.ndarray:
+        """
+        Hàm quyết định phân loại theo quy ước chuẩn:
+        decision_function(X) = threshold_ - anomaly_score(X).
+        - Điểm ÂM (< 0): BẤT THƯỜNG (Anomaly)
+        - Điểm DƯƠNG (>= 0): BÌNH THƯỜNG (Normal)
+        """
+        return self.threshold_ - self.anomaly_score(X)
+
+    def predict(self, X, threshold=None) -> np.ndarray:
+        """
+        Phân loại nhị phân:
+        - 1: BẤT THƯỜNG (Anomaly)
+        - 0: BÌNH THƯỜNG (Normal)
+        """
+        thr = self.threshold_ if threshold is None else float(threshold)
+        scores = self.anomaly_score(X)
+        return (scores >= thr).astype(int)
+
+    def fit_predict(self, X, y=None, threshold=None) -> np.ndarray:
+        """Vừa huấn luyện mô hình vừa trả về nhãn dự đoán (Unsupervised, bỏ qua y)."""
+        return self.fit(X, y=y).predict(X, threshold=threshold)
+
+
+# Alias tương thích
+IsolationForestScratch = IsolationForest

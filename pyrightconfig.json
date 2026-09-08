@@ -1,0 +1,12 @@
+{
+  "include": [
+    ".",
+    "tests"
+  ],
+  "extraPaths": [
+    ".",
+    "tests"
+  ],
+  "venvPath": "C:\\Users\\PC\\AppData\\Local\\Programs\\Python",
+  "venv": "Python313"
+}
