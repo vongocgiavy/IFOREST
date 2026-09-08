@@ -392,10 +392,25 @@ def average_precision_score(y_true, y_score) -> float:
     return float(np.sum(np.diff(recall) * precision[1:]))
 
 
-def permutation_importance_scratch(model, X, y, n_repeats: int = 3, random_state: int = 42):
-    """Đo lường Feature Importance bằng Permutation Importance thuần NumPy dựa trên độ suy giảm F1."""
+def permutation_importance_scratch(model, X, y, scoring: str = "roc_auc", n_repeats: int = 5, random_state: int = 42):
+    """
+    Đo lường Feature Importance bằng Permutation Importance thuần NumPy.
+
+    Tham số:
+    ---------
+    scoring : str, mặc định="roc_auc"
+        - "roc_auc": Độ suy giảm ROC-AUC khi hoán vị (Threshold-independent, chuẩn khoa học, loại bỏ nhiễu biên ngưỡng).
+        - "f1": Độ suy giảm F1-score khi hoán vị (Threshold-dependent, phụ thuộc vào ngưỡng phân loại).
+    n_repeats : int, mặc định=5
+        Số lần hoán vị ngẫu nhiên để ước lượng trung bình và độ lệch chuẩn.
+    random_state : int, mặc định=42
+        Seed số ngẫu nhiên đảm bảo tính tái lập.
+    """
     if n_repeats <= 0:
         raise ValueError("n_repeats must be > 0")
+    if scoring not in ["roc_auc", "f1"]:
+        raise ValueError(f"scoring không hợp lệ: '{scoring}'. Phải là 'roc_auc' hoặc 'f1'.")
+
     if isinstance(random_state, np.random.RandomState):
         rng = random_state
     else:
@@ -409,8 +424,11 @@ def permutation_importance_scratch(model, X, y, n_repeats: int = 3, random_state
     if len(X_arr) == 0:
         return np.zeros(0), np.zeros(0)
 
-    base_pred = model.predict(X_arr)
-    base_f1 = f1_score(y_arr, base_pred)
+    if scoring == "roc_auc":
+        base_score = roc_auc_score(y_arr, model.anomaly_score(X_arr))
+    else:
+        base_pred = model.predict(X_arr)
+        base_score = f1_score(y_arr, base_pred)
 
     n_features = X_arr.shape[1]
     importances = np.zeros((n_features, n_repeats))
@@ -419,8 +437,12 @@ def permutation_importance_scratch(model, X, y, n_repeats: int = 3, random_state
         for r in range(n_repeats):
             X_perm = X_arr.copy()
             X_perm[:, f_idx] = rng.permutation(X_perm[:, f_idx])
-            pred_perm = model.predict(X_perm)
-            importances[f_idx, r] = base_f1 - f1_score(y_arr, pred_perm)
+            if scoring == "roc_auc":
+                score_perm = roc_auc_score(y_arr, model.anomaly_score(X_perm))
+                importances[f_idx, r] = base_score - score_perm
+            else:
+                pred_perm = model.predict(X_perm)
+                importances[f_idx, r] = base_score - f1_score(y_arr, pred_perm)
 
     importances_mean = np.mean(importances, axis=1)
     importances_std = np.std(importances, axis=1)

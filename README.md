@@ -122,16 +122,20 @@ print(f"Anomaly Score: {score:.4f} -> Trạng thái: {'BẤT THƯỜNG' if is_an
 ## 6. Điểm nổi bật về Kỹ thuật & Học thuật
 
 1. **Pure NumPy 100% (Zero Scikit-Learn):** Tự lập trình từ số 0 toàn bộ cấu trúc thuật toán Isolation Forest (`Node`, `IsolationTree`, `IsolationForest`, `c_factor`), cấu trúc Pipeline và toàn bộ hệ thống Metrics chuẩn xác.
-2. **Chuẩn xác theo bài báo gốc Liu et al. (2008):**
+2. **Chuẩn xác theo bài báo gốc Liu et al. (2008) & Mở rộng Kỹ thuật:**
    - **Học không giám sát (Unsupervised):** Quá trình dựng cây hoàn toàn không sử dụng nhãn. Phân hoạch không gian ngẫu nhiên dựa trên phân phối dữ liệu thuộc tính.
    - **Ngưỡng lý thuyết tự nhiên:** Cung cấp `contamination="auto"` với ngưỡng quyết định lý thuyết $s \ge 0.5$ (điểm bất thường có chiều dài đường đi ngắn hơn $c(\psi)$).
    - **Độ sâu cây tự co giãn:** $max\_depth = \lceil \log_2(\psi) \rceil$ tính trực tiếp từ kích thước mẫu thực tế $\psi = max\_samples\_actual\_$ (đảm bảo $\psi \ge 2$).
-   - **Feature subsampling:** Mô hình hỗ trợ `max_features` theo từng cây; trong cấu hình chính `max_features = 1.0` dùng toàn bộ 9 cảm biến.
+   - **Feature Bagging per Tree:** Khi `max_features < 1.0`, tập thuộc tính con được chọn ngẫu nhiên 1 lần cho mỗi cây iTree (theo thiết kế mở rộng phổ biến trong scikit-learn; bản gốc Liu et al. 2008 dùng toàn bộ thuộc tính cho mọi cây).
+   - **Quy ước nhãn chuẩn nhị phân:** `predict()` trả về nhãn `1` (Bất thường) và `0` (Bình thường), khớp trực tiếp với biến mục tiêu $y \in \{0, 1\}$ (khác quy ước `-1/1` của sklearn).
 3. **Phân chia dữ liệu & Giao thức đánh giá chuẩn mực:**
-   - Phân chia Stratified 80/20 train-test split (`random_state=42`) cách ly dữ liệu triệt để, kiểm tra `train_indices.isdisjoint(test_indices)`.
+   - Phân chia Stratified 80/20 train-test split (`random_state=42`) bảo đảm không trùng lặp mẫu giữa hai tập, kiểm tra `train_indices.isdisjoint(test_indices)`.
    - **Tập Train (Semi-supervised / Label-guided validation):** `StratifiedKFold` 3-fold dùng để tinh chỉnh siêu tham số và xác định ngưỡng thực nghiệm $(1 - \text{train\_contam})$.
    - **Tập Test (Khách quan):** Đánh giá độc lập trên cả 2 loại ngưỡng mà không rò rỉ thông tin tập test.
-4. **Phân định rõ ràng kết quả Benchmark:**
+4. **Phân tích Giải thích Mô hình (Permutation Importance):**
+   - Hỗ trợ cả **ROC-AUC Drop** (chuẩn khoa học, Threshold-Independent, loại bỏ nhiễu biên ngưỡng) và **F1 Drop** (Threshold-Dependent).
+   - Phân tích rạch ròi hiện tượng F1-drop âm do ngưỡng cố định gây dịch chuyển cục bộ giữa Precision/Recall trên tập test, đối chiếu với ROC-AUC drop luôn dương và ổn định.
+5. **Phân định rõ ràng kết quả Benchmark:**
    - **Bài toán thực tế chính (Full Shuttle 58k mẫu):** Đạt **ROC-AUC = 0.8432**, F1 = 0.5097 (ngưỡng lý thuyết 0.5) và F1 = 0.5424 (ngưỡng thực nghiệm).
    - **Benchmark quốc tế ODDS (49k mẫu, Rayana 2016):** Đạt **ROC-AUC = 0.9981**, F1 = 0.9734. Đây là benchmark đối sánh kinh điển với các nghiên cứu học thuật quốc tế.
-5. **Đầy đủ tiện ích và kiểm thử tự động:** Hỗ trợ `score_samples`, `decision_function` (âm = bất thường), `fit_predict`, xác thực số chiều `n_features_in_`, bẫy lỗi `NaN/Inf`, và bộ test tự động 16 bài pass 100%.
+6. **Đầy đủ tiện ích và kiểm thử tự động:** Hỗ trợ `score_samples`, `decision_function` (âm = bất thường), `fit_predict`, xác thực số chiều `n_features_in_`, bẫy lỗi `NaN/Inf` bằng `np.isfinite`, và bộ test tự động 16 bài pass 100%.

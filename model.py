@@ -117,6 +117,23 @@ class IsolationForest:
     """
     Thuật toán Isolation Forest tự lập trình (Liu et al., 2008) - 100% Pure NumPy.
     
+    Quy ước Nhãn & Hàm Mục Tiêu:
+    -----------------------------
+    - predict(): Trả về nhãn nhị phân chuẩn bài toán Anomaly Detection:
+        + 1: BẤT THƯỜNG (Anomaly / Outlier)
+        + 0: BÌNH THƯỜNG (Normal / Inlier)
+      (Lưu ý: Khác với quy ước -1/1 của scikit-learn để khớp trực tiếp với biến mục tiêu {0, 1} của bài toán).
+    - score_samples(X): Trả về -anomaly_score(X) (giá trị càng âm càng bất thường).
+    - decision_function(X): Trả về threshold_ - anomaly_score(X) (điểm âm = bất thường, điểm dương = bình thường).
+    
+    Đặc điểm Kiến trúc & Mở rộng Kỹ thuật:
+    --------------------------------------
+    - Feature Bagging per Tree: Khi max_features < 1.0, tập thuộc tính con được chọn ngẫu nhiên
+      1 lần cho mỗi cây iTree (theo thiết kế mở rộng phổ biến trong scikit-learn; bài báo gốc
+      Liu et al. 2008 mặc định sử dụng toàn bộ thuộc tính cho mọi cây).
+    - Input Validation: Phương thức _validate_X sử dụng np.isfinite để chặn toàn bộ dữ liệu chứa NaN/Inf,
+      kiểm tra mảng 2 chiều, kích thước mẫu n >= 2 và số chiều thuộc tính khớp với tập huấn luyện.
+    
     Tham số:
     ---------
     n_estimators : int, mặc định=100

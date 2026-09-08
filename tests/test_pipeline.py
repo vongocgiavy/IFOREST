@@ -315,6 +315,8 @@ class TestIsolationForestPipeline(unittest.TestCase):
             average_precision_score([0, 1], [0.5])
         with self.assertRaises(ValueError):
             permutation_importance_scratch(model, X_dummy, np.zeros(len(X_dummy)), n_repeats=0)
+        with self.assertRaises(ValueError):
+            permutation_importance_scratch(model, X_dummy, np.zeros(len(X_dummy)), scoring="invalid")
 
 
 if __name__ == "__main__":
