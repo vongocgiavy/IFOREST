@@ -8,7 +8,7 @@ Zero Scikit-Learn Dependency.
 import argparse
 import os
 import sys
-from typing import Optional, Union, List, Tuple
+from typing import Optional, Union, List, Tuple, Any, overload
 # pyrefly: ignore [missing-import]
 import numpy as np
 import pandas as pd
@@ -81,6 +81,10 @@ class Pipeline:
 # 2. CHIA TẬP DỮ LIỆU & KFOLD KHÔNG GIÁM SÁT (PURE NUMPY)
 # ==============================================================================
 
+@overload
+def train_test_split(X: Any, y: None = None, test_size: float = 0.2, random_state: Any = 42, stratify: bool = False) -> Tuple[Any, Any]: ...
+@overload
+def train_test_split(X: Any, y: Any, test_size: float = 0.2, random_state: Any = 42, stratify: bool = False) -> Tuple[Any, Any, Any, Any]: ...
 def train_test_split(X, y=None, test_size: float = 0.2, random_state: int = 42, stratify: bool = False):
     """
     Phân chia Train/Test thuần túy cho cả bài toán không nhãn (Unsupervised) và có nhãn.

@@ -163,7 +163,7 @@ class IsolationForest:
     """
 
     def __init__(self, n_estimators: int = 100, max_samples: Union[int, float, str] = "auto", max_features: float = 1.0,
-                 contamination: Union[float, str] = "auto", random_state: int = 42):
+                 contamination: Union[float, str] = "auto", random_state: Union[int, np.random.RandomState, None] = 42):
         if isinstance(n_estimators, bool) or not isinstance(n_estimators, int) or n_estimators <= 0:
             raise ValueError("n_estimators must be > 0")
 

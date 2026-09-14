@@ -6,7 +6,9 @@ UNIT TESTS & VERIFICATION SUITE FOR ISOLATION FOREST PIPELINE (ZERO SKLEARN)
 import os
 import sys
 import unittest
+# pyrefly: ignore [missing-import]
 import pandas as pd
+# pyrefly: ignore [missing-import]
 import numpy as np
 
 # Thêm thư mục gốc để import từ model và run_pipeline
