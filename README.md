@@ -19,7 +19,7 @@ d:/May_Hoc/iforest/
 │
 ├── model.py                                 # Core Mô hình THUẦN ISOLATION FOREST (100% Pure NumPy: Node, iTree, iForest)
 ├── run_pipeline.py                          # Pipeline điều phối không giám sát, Unsupervised K-Fold CV, Root Cause Analysis & CLI
-├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook phân tích học thuật trực quan (15 phần, 37 cells hoàn chỉnh)
+├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook phân tích học thuật trực quan (21 bước chuẩn hóa, 42 cells hoàn chỉnh)
 │
 └── tests/                                   # Bộ kiểm thử tự động
     └── test_pipeline.py                     # 19 bài Unit Tests toàn diện (toán học, unsupervised K-Fold, edge cases, RCA)
@@ -156,3 +156,32 @@ print(f"Anomaly Score: {score:.6f} -> Trạng thái: {level}")
 2. **Tuân thủ Tuyệt đối Bản chất Không Giám Sát:** Mô hình không cần nhãn $y$ để hoạt động, phù hợp với các ứng dụng thực tiễn trong công nghiệp hàng không vũ trụ và giám sát thiết bị IoT thời gian thực.
 3. **Phòng chống Rò rỉ Dữ liệu (No Data Leakage):** Mọi ngưỡng phân vị và tham số đều được ước lượng nghiêm ngặt trên tập Train và kiểm thử độc lập trên tập Test.
 4. **Giải thích Minh bạch (White-box Interpretability):** Kết hợp định lượng toán học giữa Anomaly Score và độ lệch chuẩn $Z$-score để xác định nguyên nhân gốc rễ cho từng cảnh báo sự cố.
+
+---
+
+## 8. Khung 21 Bước Chuẩn Hóa Xây Dựng Mô Hình Machine Learning (21-Step ML Lifecycle)
+
+Toàn bộ quy trình trong dự án và Jupyter Notebook được cấu trúc chuẩn hóa và liên kết chặt chẽ theo **21 bước kinh điển** của kỹ thuật Machine Learning học thuật:
+
+1. **Xác định bài toán (Problem Definition):** Phát hiện dị thường dữ liệu telemetry cảm biến tàu con thoi không gian NASA nhằm cảnh báo hỏng hóc và rủi ro chuyến bay.
+2. **Xác định bản chất bài toán ML (Nature of ML Problem):** Bài toán Thuần Không giám sát (Pure Unsupervised Learning); không có nhãn ground truth $y$, phân phối mất cân bằng cực đoan (dị thường là số ít và khác biệt).
+3. **Khảo sát lĩnh vực và không gian dữ liệu (Domain & Data Understanding):** Khảo sát 10 kênh cảm biến số thực/số nguyên (nhiệt độ, áp suất, độ trễ van,...), phân tích thống kê mô tả (Mean, Std, Skewness, Kurtosis) và ma trận tương quan Pearson.
+4. **Khám phá và xử lý dữ liệu (Data Exploration & Cleaning):** Kiểm tra tính toàn vẹn (0 missing values, 0 infinite values), phân tích các giá trị ngoại lai đa chiều.
+5. **Chuẩn hóa đặc trưng (Feature Scaling & Scale Invariance):** Chứng minh tính bất biến tỷ lệ của Isolation Forest trước các phép biến đổi đơn điệu (Monotonic Transformations); chứng minh qua thực nghiệm việc giữ nguyên dữ liệu thô để bảo toàn độ phân giải nguyên gốc.
+6. **Xử lý biến phân loại (Categorical Data & Encoding):** Toàn bộ 10 đặc trưng là biến định lượng liên tục/rời rạc, không phát sinh chi phí mã hóa One-Hot hay Target Encoding.
+7. **Lựa chọn thuật toán & Hàm mất mát (Algorithm Selection & Loss Function):** Lựa chọn Isolation Forest (Liu et al., 2008). Phân tích hàm điểm bất thường $s(x, \psi) = 2^{-\mathbb{E}(h(x))/c(\psi)}$ đóng vai trò hàm mục tiêu định lượng mức độ cô lập không giám sát.
+8. **Kỹ thuật tạo đặc trưng & Lời nguyền số chiều (Feature Engineering & Curse of Dimensionality):** Khảo sát tính đủ của 10 chiều ban đầu; tránh tạo thêm biến dư thừa gây thưa thớt không gian và hiện tượng đồng nhất khoảng cách (Distance Concentration).
+9. **Chia dữ liệu & Kiểm soát rò rỉ (Data Splitting & Leakage Prevention):** Phân chia Train/Test 80/20 (46,400 Train / 11,600 Test) với các tập chỉ số rời rạc tuyệt đối (`isdisjoint`).
+10. **Lựa chọn phương pháp chia dữ liệu (Data Splitting Strategy):** Phân tích so sánh Hold-out vs Stratified vs Temporal Splitting; giải thích tính phù hợp của Random Hold-out và K-Fold không nhãn.
+11. **Xây dựng mô hình cơ sở (Baseline Model):** Xây dựng mô hình Baseline thống kê đa biến (Multivariate Z-Score / Distance-to-Centroid) làm điểm chuẩn so sánh.
+12. **Định lý No Free Lunch & Không gian giả thiết (No Free Lunch Theorem):** Phân tích ưu thế của phân hoạch đệ quy trực giao so với giả định phân phối lồi/hình cầu của Baseline thống kê; phân tích giới hạn với dị thường nằm xiên góc.
+13. **Đánh đổi Bias - Variance (Bias-Variance Tradeoff Analysis):** Khảo sát thực nghiệm số lượng cây $t$ (kiểm soát Variance) và kích thước mẫu con $\psi=256$ (kiểm soát Bias, chống swamping và masking).
+14. **Tối ưu siêu tham số (Hyperparameter Tuning):** Thiết kế lưới siêu tham số không giám sát $\psi \in \{128, 256, 512\}$, $t \in \{50, 100, 200\}$ dựa trên độ ổn định phân phối điểm.
+15. **Lựa chọn và đánh giá bằng Evaluation Metrics:** Xây dựng hệ thống 5 ngưỡng quyết định đa tầng (Theoretical 0.50, Top 5%, Top 1%, Top 0.1%, Gaussian $\mu + 2\sigma$).
+16. **Kiểm định chéo không giám sát (Unsupervised K-Fold Cross-Validation):** Đánh giá độ ổn định của điểm trung bình và phương sai điểm số qua 3-Fold Cross-Validation độc lập.
+17. **Thực nghiệm huấn luyện mô hình (Model Training & Experimentation):** Huấn luyện mô hình chính thức trên toàn bộ tập Train (46,400 mẫu) và đánh giá độc lập trên tập Test (11,600 mẫu).
+18. **Kiểm định thống kê độ tin cậy (Statistical Significance & Confidence Intervals):** Tính khoảng tin cậy 95% Bootstrap/Asymptotic cho điểm trung bình và kiểm định Z-test hai mẫu độc lập ($p < 10^{-50}$).
+19. **Phân tích lỗi & Vùng biên quyết định (Error Analysis & Borderline Cases):** Khảo sát các mẫu nằm trong vùng đệm không chắc chắn $s \in [0.48, 0.52]$, thiết lập giao thức giám sát thủ công (Human-in-the-loop).
+20. **Khả năng giải thích mô hình & Chẩn đoán căn nguyên (Model Interpretability & RCA):** Phân tích tương quan thuộc tính với điểm số và tính vector $Z$-score cục bộ để định vị cảm biến lỗi cho từng mẫu bất thường.
+21. **Chu trình lặp cải tiến mô hình (Iterative ML Development Cycle):** Thiết lập quy trình phản hồi, theo dõi Data Drift / Concept Drift và đóng gói Pipeline suy luận thời gian thực cho môi trường sản xuất.
+
