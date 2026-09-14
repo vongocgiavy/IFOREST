@@ -21,7 +21,7 @@ d:/May_Hoc/iforest/
 │
 ├── model.py                                 # Thuật toán thuần Isolation Forest (100% Pure NumPy: Node, IsolationTree, IsolationForest)
 ├── run_pipeline.py                          # Pipeline điều phối không giám sát, Percentile Rank RCA, Unsupervised 3-Fold CV & CLI
-├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook báo cáo trực quan (21 bước chuẩn mực, 46 cells, 15 đồ thị)
+├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook báo cáo trực quan (21 bước chuẩn mực, 49 cells, 18 đồ thị)
 ├── shuttle_anomaly_detection_iforest.html   # Bản xuất HTML tương tác đầy đủ hình ảnh và báo cáo thực nghiệm
 │
 └── tests/
@@ -191,7 +191,7 @@ py -3.13 -m pytest tests/test_pipeline.py -v
 *Kết quả kiểm thử thực tế:* **21 passed (< 1.0s, 100% Pass Rate)**.
 
 ### 8.5. Khởi Chạy Jupyter Notebook
-Mở notebook phân tích trực quan toàn diện (15 hình vẽ khoa học tương tác):
+Mở notebook phân tích trực quan toàn diện (18 hình vẽ khoa học tương tác):
 
 ```powershell
 jupyter notebook shuttle_anomaly_detection_iforest.ipynb
