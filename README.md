@@ -3,7 +3,7 @@
 
 Dự án phát triển hệ thống phát hiện dị thường trên dữ liệu đo đạc cảm biến thời gian thực (telemetry) của tàu con thoi không gian NASA (Statlog Shuttle Dataset). Toàn bộ thuật toán **Isolation Forest** (theo công bố gốc của Liu, Ting & Zhou, 2008) được tự xây dựng từ số 0 (**From Scratch - Pure NumPy**) mà không sử dụng bất kỳ thư viện học máy bậc cao nào (Zero Scikit-Learn).
 
-Quy trình vận hành theo chuẩn mực **100% Học Không Giám Sát (Pure Unsupervised Anomaly Detection)** trên toàn bộ **10 kênh cảm biến vật lý thô** (`feat_1` đến `feat_10`), không sử dụng nhãn mục tiêu ($y$) trong toàn bộ các pha huấn luyện, kiểm định chéo và suy luận. Toàn bộ tiến trình nghiên cứu được tổ chức theo khung phương pháp luận **21 bước chuẩn hóa của vòng đời phát triển mô hình Machine Learning**.
+Quy trình vận hành theo chuẩn mực **100% Học Không Giám Sát (Pure Unsupervised Anomaly Detection)** trên **9 kênh cảm biến đo đạc vật lý thực tế** (`feat_1` đến `feat_9`). Cột thứ 10 gốc (`feat_10`) là nhãn lớp UCI Statlog ({1..7}), được bóc tách hoàn toàn khỏi ma trận đặc trưng $X$ để loại trừ triệt để hiện tượng rò rỉ nhãn (Label Leakage) và chỉ được sử dụng cho việc đối chuẩn ngoại vi (External Supervised Validation). Toàn bộ tiến trình nghiên cứu được tổ chức theo khung phương pháp luận **21 bước chuẩn hóa của vòng đời phát triển mô hình Machine Learning**.
 
 ---
 
@@ -17,14 +17,15 @@ d:/May_Hoc/iforest/
 ├── requirements.txt                         # Danh mục thư viện phụ thuộc (numpy, pandas, matplotlib, seaborn, pytest)
 ├── README.md                                # Báo cáo khoa học kỹ thuật và hướng dẫn vận hành toàn diện
 │
-├── shuttle.csv                              # Dữ liệu telemetry cảm biến NASA gốc (58,000 mẫu x 10 đặc trưng, không nhãn)
+├── shuttle.csv                              # Dữ liệu telemetry cảm biến NASA gốc (58,000 mẫu x 10 cột, gồm 9 cảm biến + 1 nhãn UCI)
 │
 ├── model.py                                 # Thuật toán thuần Isolation Forest (100% Pure NumPy: Node, IsolationTree, IsolationForest)
-├── run_pipeline.py                          # Pipeline điều phối không giám sát, Unsupervised 3-Fold CV, Root Cause Analysis & CLI
-├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook báo cáo khoa học trực quan (21 bước chuẩn mực, 44 cells, 14 đồ thị)
+├── run_pipeline.py                          # Pipeline điều phối không giám sát, Percentile Rank RCA, Unsupervised 3-Fold CV & CLI
+├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook báo cáo trực quan (21 bước chuẩn mực, 46 cells, 15 đồ thị)
+├── shuttle_anomaly_detection_iforest.html   # Bản xuất HTML tương tác đầy đủ hình ảnh và báo cáo thực nghiệm
 │
 └── tests/
-    └── test_pipeline.py                     # Bộ 19 bài kiểm thử tự động toàn diện (Toán học, CV, Edge Cases, Reproducibility)
+    └── test_pipeline.py                     # Bộ 21 bài kiểm thử tự động toàn diện (Toán học, CV, Leakage, RCA Stability, Reproducibility)
 ```
 
 ---
@@ -32,10 +33,14 @@ d:/May_Hoc/iforest/
 ## 2. Đặc Tả Dữ Liệu Cảm Biến NASA Shuttle (Statlog Telemetry)
 
 - **Quy mô mẫu:** 58,000 quan sát từ hệ thống cảm biến tàu con thoi không gian NASA.
-- **Không gian thuộc tính:** 10 biến số nguyên định lượng (`feat_1` đến `feat_10`) đo đạc áp suất van thủy lực, lưu lượng chất tải nhiệt, nhiệt độ buồng trao đổi và chu kỳ bơm.
-- **Trạng thái nhãn:** **Thuần không giám sát (100% Unlabelled)**; không sử dụng nhãn trong quá trình xây dựng mô hình.
-- **Tính toàn vẹn dữ liệu:** 0 giá trị khuyết thiếu (NaN), 0 giá trị vô hạn (Inf) trên toàn bộ 580,000 điểm đo.
-- **Bảo toàn giá trị ngoại lai (Outlier Retention):** Trong bài toán phát hiện bất thường, các điểm ngoại lai phản ánh trạng thái sự cố phần cứng, do đó được giữ nguyên vẹn thay vì áp dụng các kỹ thuật lọc nhiễu thông thường.
+- **Không gian thuộc tính:** 9 biến số nguyên định lượng (`feat_1` đến `feat_9`) đo đạc áp suất van thủy lực, lưu lượng chất tải nhiệt, nhiệt độ buồng trao đổi và chu kỳ bơm.
+- **Khắc phục triệt để Rò rỉ Nhãn (Label Leakage):**
+  - Cột thứ 10 trong file gốc `shuttle.csv` (`col[9]`) có phân phối: Class 1 (Rad Flow - 45,586 mẫu / 78.6%), Class 2 (50), Class 3 (171), Class 4 (8,903), Class 5 (3,267), Class 6 (10), Class 7 (13) — trùng khớp 100% với nhãn lớp benchmark UCI Statlog Shuttle gốc.
+  - Cột này được bóc tách độc lập hoàn toàn khỏi ma trận đặc trưng $X \in \mathbb{R}^{58,000 \times 9}$. Mô hình hoàn toàn không nhìn thấy nhãn này khi huấn luyện và suy luận. Nhãn này chỉ dùng để đối soát năng lực phát hiện thực tế sau cùng (External Validation).
+- **Hiện tượng Zero-Inflated & Kurtosis Cực Cao:**
+  - `feat_2` (kurtosis = 2,647, 61.9% zero), `feat_4` (kurtosis = 7,698, 65.6% zero), `feat_6` (kurtosis = 5,979, 31.8% zero) có độ lệch cực hạn.
+  - Do đó, phương pháp đo lệch Z-score tham số truyền thống ($\frac{x - \mu}{\sigma}$) bị phá vỡ hoàn toàn và được thay thế bằng phương pháp phân vị phi tham số (Percentile Rank Deviation).
+- **Tính toàn vẹn dữ liệu:** 0 giá trị khuyết thiếu (NaN), 0 giá trị vô hạn (Inf) trên toàn bộ 522,000 điểm đo cảm biến.
 - **Tính bất biến tỷ lệ (Scale Invariance):** Cây cô lập chỉ thực hiện phép so sánh thứ tự nhị phân $X_j < v$ với $v \sim \text{Uniform}(\min(X_j), \max(X_j))$, bảo toàn tuyệt đối thứ tự phân hoạch dưới mọi phép biến đổi đơn điệu tăng ngặt. Mô hình được huấn luyện trực tiếp trên thang đo thô của cảm biến mà không cần chuẩn hóa (Feature Scaling).
 - **Phân tách kiểm soát rò rỉ (Leakage Control):** Phân chia tập Huấn luyện (Train - 46,400 mẫu / 80%) và tập Kiểm thử (Test - 11,600 mẫu / 20%) với tập chỉ mục rời rạc tuyệt đối:
   $$\text{Index}_{\text{train}} \cap \text{Index}_{\text{test}} = \emptyset$$
@@ -78,96 +83,110 @@ $$s(\mathbf{x}, \psi) = 2^{-\frac{\mathbb{E}(h(\mathbf{x}))}{c(\psi)}}$$
 
 ## 4. Hệ Thống 5 Ngưỡng Quyết Định Không Giám Sát
 
-Do bài toán không có nhãn ground truth, hệ thống thiết lập cơ chế đánh giá đa tầng dựa trên phân phối xác suất và độ dài đường đi trên tập kiểm thử Test ($N = 11,600$):
+Hệ thống thiết lập cơ chế đánh giá đa tầng dựa trên phân phối xác suất và độ dài đường đi trên tập kiểm thử Test ($N = 11,600$ mẫu x 9 cảm biến):
 
 | Cấp Độ Ngưỡng | Căn Cứ Khoa Học | Giá Trị Ngưỡng | Số Mẫu Phát Hiện | Tỷ Lệ Phát Hiện (%) | Mức Độ Can Thiệp Kỹ Thuật |
 | :--- | :--- | :---: | :---: | :---: | :--- |
-| **1. Ngưỡng Lý Thuyết (Liu et al., 2008)** | $\mathbb{E}(h(\mathbf{x})) < c(\psi) \iff s \ge 0.50$ | `0.5000` | 1,690 | **14.57%** | Cảnh báo giám sát thường quy |
-| **2. Phân Vị Ô Nhiễm Ước Lượng (Top 5%)** | Phân vị $P_{95}$ từ phân phối điểm tập Train | `0.5725` | 612 | **5.28%** | Cảnh báo bất thường telemetry |
-| **3. Phân Vị Nguy Hiểm Cao (Top 1%)** | Phân vị $P_{99}$ từ phân phối điểm tập Train | `0.6436` | 119 | **1.03%** | Báo động nguy cơ sự cố cấp 2 |
-| **4. Phân Vị Cực Đoan Thảm Họa (Top 0.1%)** | Phân vị $P_{99.9}$ từ phân phối điểm tập Train | `0.6687` | 16 | **0.14%** | Báo động đỏ / Ngắt hệ thống khẩn cấp |
-| **5. Giới Hạn Thống Kê ($\mu + 2\sigma$)** | Độ lệch chuẩn phân phối Gaussian | `0.5612` | 710 | **6.12%** | Theo dõi trôi dạt dữ liệu (Data Drift) |
+| **1. Ngưỡng Lý Thuyết (Liu et al., 2008)** | $\mathbb{E}(h(\mathbf{x})) < c(\psi) \iff s \ge 0.50$ | `0.5000` | 1,593 | **13.73%** | Cảnh báo giám sát thường quy |
+| **2. Phân Vị Ô Nhiễm Ước Lượng (Top 5%)** | Phân vị $P_{95}$ từ phân phối điểm tập Train | `0.5559` | 606 | **5.22%** | Cảnh báo bất thường telemetry |
+| **3. Phân Vị Nguy Hiểm Cao (Top 1%)** | Phân vị $P_{99}$ từ phân phối điểm tập Train | `0.6308` | 136 | **1.17%** | Báo động nguy cơ sự cố cấp 2 |
+| **4. Phân Vị Cực Đoan Thảm Họa (Top 0.1%)** | Phân vị $P_{99.9}$ từ phân phối điểm tập Train | `0.6625` | 12 | **0.10%** | Báo động đỏ / Ngắt hệ thống khẩn cấp |
+| **5. Giới Hạn Thống Kê ($\mu + 2\sigma$)** | Độ lệch chuẩn phân phối Gaussian | `0.5498` | 669 | **5.77%** | Theo dõi trôi dạt dữ liệu (Data Drift) |
 
 ---
 
-## 5. Chẩn Đoán Nguyên Nhân Gốc Rễ (Root Cause Analysis - RCA)
+## 5. Chẩn Đoán Căn Nguyên & Tính Ổn Định (RCA & Feature Importance)
 
-Hệ thống cung cấp cơ chế giải thích mô hình hộp trắng (White-box Interpretability) phục vụ trực tiếp kỹ sư buồng lái:
+Hệ thống ứng dụng phương pháp phi tham số (Non-parametric) để đảm bảo độ bền vững trước hiện tượng zero-inflated:
 
-1. **Độ quan trọng đặc trưng không giám sát (Unsupervised Feature Importance):**
-   - Kết hợp hệ số tương quan tuyến tính Pearson $|r(X_j, s)|$ với độ lệch chuẩn hóa trung bình của các mẫu dị biệt so với phân phối danh định.
-   - **Top 3 cảm biến chi phối mạnh nhất đến sự bất thường:** `feat_9`, `feat_8`, `feat_10`.
-2. **Định danh nguyên nhân gốc rễ (Root Cause Analysis):**
-   - Với mỗi mẫu bất thường phát hiện được, hệ thống tính toán vector độ lệch chuẩn hóa đa biến:
-     $$Z_j = \frac{x_j - \mu_{j, \text{normal}}}{\sigma_{j, \text{normal}}}$$
-   - Định danh chính xác kênh cảm biến phát sinh xung lệch cực đoan (ví dụ: `feat_2` lệch $+61.89\sigma$ hoặc `feat_9` lệch $+3.87\sigma$), giúp kỹ sư định vị hư hỏng van hoặc rò rỉ áp suất ngay lập tức.
+1. **Đo lệch chuẩn phi tham số (Percentile Rank Deviation):**
+   - Thay thế $Z$-score bằng độ lệch phân vị so với trung vị:
+     $$\text{Dev}_j(x) = \left| \text{PercentileRank}(x, X_j) - 50.0 \right|$$
+   - Miền giá trị $[0.0, 50.0]$: 0.0 nghĩa là nằm tại trung vị, 50.0 nghĩa là nằm ở điểm biên cực đoan của phân phối. Hoàn toàn miễn nhiễm trước kurtosis cực hạn.
+2. **Độ quan trọng đặc trưng không giám sát (Percentile-Based UFI):**
+   - Kết hợp tương quan tuyến tính Pearson $|r(X_j, s)|$ với trung vị độ lệch phân vị của nhóm bất thường ($s \ge 0.5$).
+   - **Top cảm biến chủ đạo:** `feat_8`, `feat_9`, `feat_1`.
+   - **Kiểm định tính ổn định xếp hạng (Spearman Stability Test):** Hệ số Spearman rho giữa 2 nửa nhóm bất thường đạt $\rho \ge 0.98$ (vượt xa ngưỡng yêu cầu $0.60$), chứng minh thứ hạng cảm biến hoàn toàn ổn định và không bị phụ thuộc vào phân chia mẫu ngẫu nhiên.
 
 ---
 
-## 6. Khung 21 Bước Phát Triển Mô Hình Machine Learning
+## 6. Kết Quả Kiểm Định Ngoại Vi (External Supervised Validation)
 
-Toàn bộ quy trình trong dự án và Jupyter Notebook [shuttle_anomaly_detection_iforest.ipynb](file:///d:/May_Hoc/iforest/shuttle_anomaly_detection_iforest.ipynb) được liên kết chặt chẽ theo 21 bước kinh điển của vòng đời học máy:
+Sau khi mô hình được huấn luyện hoàn toàn không giám sát trên 9 cảm biến, nhãn lớp UCI gốc (`y_eval = y_test != 1`, tỷ lệ dị thường thực tế 21.48%) được đưa vào để đo lường năng lực phát hiện thực tế:
+
+| Chỉ Số Đánh Giá Ngoại Vi | Giá Trị Thực Nghiệm (Leak-Free, 9 Cảm Biến) | Ý Nghĩa Kỹ Thuật |
+| :--- | :---: | :--- |
+| **ROC-AUC (Không Rò Rỉ Nhãn)** | **0.8474** | Khả năng phân biệt thực tế của mô hình không giám sát (trung thực, loại bỏ con số 0.9069 bị thổi phồng do leakage trước đây) |
+| **Average Precision (PR-AUC / AP)** | **0.6461** | Năng lực phân định trên phân phối mất cân bằng (gấp 3.0 lần baseline ngẫu nhiên 0.2148) |
+| **Tại Ngưỡng Lý Thuyết ($s \ge 0.5000$)** | Prec = 0.6303 \| Rec = 0.4029 \| **F1 = 0.4916** | Bắt được 1,004 mẫu sự cố thực tế với độ chuẩn xác 63.0% |
+| **Tại Ngưỡng Top 5% ($s \ge 0.5559$)** | **Prec = 0.9307** \| Rec = 0.2263 \| F1 = 0.3641 | Độ chính xác đạt tới 93.1%, cực kỳ tin cậy cho cảnh báo mức cao |
+
+---
+
+## 7. Khung 21 Bước Phát Triển Mô Hình Machine Learning
+
+Toàn bộ quy trình trong dự án và Jupyter Notebook [shuttle_anomaly_detection_iforest.ipynb](file:///d:/May_Hoc/iforest/shuttle_anomaly_detection_iforest.ipynb) được liên kết chặt chẽ theo 21 bước kinh điển:
 
 | STT | Bước Chuẩn Hóa | Mô Tả Thực Hiện Trong Dự Án |
 | :---: | :--- | :--- |
-| **1** | **Problem Definition** | Nhận diện sớm sai lệch telemetry cảm biến tàu con thoi NASA; 10 kênh đầu vào thô, đầu ra là chỉ số $s \in [0, 1]$ và cảnh báo phân tầng. |
-| **2** | **Nature of ML Problem** | Xác định bản chất Thuần Không Giám Sát (Unsupervised Learning); dị thường là thiểu số tách biệt, không thể dùng hệ luật if-else cố định. |
-| **3** | **Domain Understanding** | Khảo sát 10 kênh đo đạc áp suất, lưu lượng, nhiệt độ buồng trao đổi; phân tích thống kê mô tả bậc 1 đến 4 và ma trận tương quan Pearson. |
-| **4** | **Data Cleaning** | Thẩm định tính toàn vẹn (0 NaN, 0 Inf); bảo toàn 100% giá trị ngoại lai vật lý phục vụ phát hiện dị thường. |
-| **5** | **Feature Scaling** | Chứng minh toán học và thực nghiệm tính bất biến tỷ lệ của $iTree$ trước phép biến đổi đơn điệu; giữ nguyên thang đo nguyên gốc `int64`. |
-| **6** | **Categorical Encoding** | Thẩm định 10 kênh đều là biến định lượng liên tục/rời rạc, không phát sinh chi phí mã hóa One-Hot. |
-| **7** | **Algorithm, Objective & Penalty Selection** | Lựa chọn Isolation Forest (Liu et al., 2008); thiết lập hàm điểm bất thường $s(\mathbf{x}, \psi) = 2^{-\mathbb{E}(h(\mathbf{x}))/c(\psi)}$ và 3 cấp độ hệ số phạt (Hệ số phạt phần dư nút lá $c(n)$, Điều chuẩn độ sâu cấu trúc $max\_depth$, và Tỷ số phạt chi phí rủi ro $\omega \ge 10$). |
-| **8** | **Feature Engineering** | Khảo sát lời nguyền số chiều; tận dụng cơ chế phân hoạch 1D ngẫu nhiên ở mỗi nút để kháng hiện tượng đồng nhất khoảng cách. |
-| **9** | **Data Splitting & Leakage** | Phân chia Train/Test 80/20 ($46,400$ / $11,600$) với tập chỉ số rời rạc tuyệt đối (`isdisjoint == True`), loại trừ triệt để rò rỉ thông tin. |
-| **10** | **Splitting Strategy** | Luận giải sự phù hợp của phân chia ngẫu nhiên đồng đều có cố định hạt giống (`random_state=42`) trên dữ liệu không nhãn. |
+| **1** | **Problem Definition** | Nhận diện sớm sai lệch telemetry cảm biến tàu con thoi NASA; 9 kênh đầu vào thô, bóc tách nhãn UCI lớp 1-7. |
+| **2** | **Nature of ML Problem** | Bản chất Thuần Không Giám Sát (Unsupervised Learning); dị thường là thiểu số tách biệt trong không gian $\mathbb{R}^9$. |
+| **3** | **Domain Understanding** | Khảo sát 9 kênh đo đạc áp suất, lưu lượng, nhiệt độ buồng trao đổi; bóc tách phân phối 7 lớp của nhãn UCI Statlog gốc. |
+| **4** | **Data Cleaning** | Thẩm định 0 NaN, 0 Inf; nhận diện đặc tính zero-inflated (kurtosis > 2,000 ở feat_2, feat_4, feat_6). |
+| **5** | **Feature Scaling** | Chứng minh tính bất biến tỷ lệ của $iTree$ trước phép biến đổi đơn điệu; giữ nguyên thang đo nguyên gốc `int64`. |
+| **6** | **Categorical Encoding** | Thẩm định 9 kênh đều là biến định lượng liên tục/rời rạc, không phát sinh chi phí mã hóa One-Hot. |
+| **7** | **Algorithm, Objective & Penalty Selection** | Isolation Forest (Liu et al., 2008); thiết lập hàm điểm bất thường và 3 cấp độ hệ số phạt ($c(n)$, $max\_depth$, và $\omega \ge 10$). |
+| **8** | **Feature Engineering** | Khảo sát lời nguyền số chiều; tận dụng cơ chế phân hoạch 1D ngẫu nhiên ở mỗi nút để kháng đồng nhất khoảng cách. |
+| **9** | **Data Splitting & Leakage** | Phân chia Train/Test 80/20 ($46,400$ / $11,600$) với chỉ số rời rạc tuyệt đối (`isdisjoint == True`), loại trừ hoàn toàn rò rỉ nhãn. |
+| **10** | **Splitting Strategy** | Phân chia ngẫu nhiên đồng đều có cố định hạt giống (`random_state=42`) trên dữ liệu cảm biến không nhãn. |
 | **11** | **Baseline Model** | Xây dựng mô hình chuẩn đối sánh thống kê đa biến (Distance-to-Centroid / Normalized Euclidean Baseline). |
-| **12** | **No Free Lunch Theorem** | Phân tích không gian giả thuyết phân hoạch trực giao của $iTree$ so với giả định phân phối lồi của Baseline; phân tích giới hạn với dị thường phân bố xiên góc. |
-| **13** | **Bias-Variance Tradeoff** | Khảo sát số lượng cây $t$ (kiểm soát Variance, hội tụ tại $t \ge 100$) và kích thước mẫu con $\psi=256$ (kiểm soát Bias, chống swamping và masking). |
-| **14** | **Hyperparameter Tuning** | Thiết lập lưới tìm kiếm không giám sát $\psi \in \{128, 256\}$, $t \in \{50, 100\}$ theo tiêu chí tối đa hóa độ trải rộng điểm số (Score Spread $\sigma_s$). |
-| **15** | **Evaluation Metrics & Cost Thresholds** | Xây dựng hàm chi phí rủi ro bất đối xứng $\mathcal{L}_{\text{cost}}(\tau; \omega=10)$ và hệ thống 5 cấp độ ngưỡng phân tầng (Lý thuyết $0.50$, Top 5%, Top 1%, Top 0.1%, Gaussian $\mu + 2\sigma$). |
-| **16** | **Cross-Validation** | Thực hiện Unsupervised 3-Fold Cross-Validation trên tập Train, chứng minh tính ổn định cao của phân phối điểm số trên từng fold kiểm định. |
-| **17** | **Model Training & Inference** | Huấn luyện mô hình sản xuất tối ưu ($n=100, \psi=256$) trên $46,400$ mẫu Train và thực hiện suy luận trên $11,600$ mẫu Test. |
-| **18** | **Statistical Significance** | Tính khoảng tin cậy 95% ($\text{CI}_{95\%} = [0.4353, 0.4377]$) và kiểm định giả thuyết hai mẫu độc lập $Z$-test ($Z = -33.84, p < 10^{-10}$). |
-| **19** | **Error Analysis** | Phân tích độ bất định tại vùng biên quyết định $s \in [0.48, 0.52]$; thiết lập cơ chế vùng đệm cảnh báo vàng (Yellow Buffer Zone) kết hợp chuyên gia. |
-| **20** | **Model Interpretability & RCA** | Trích xuất Top 5 mẫu bất thường nhất kèm chẩn đoán căn nguyên (RCA) và phân tích mật độ phân bố KDE của Top 3 cảm biến chủ đạo. |
-| **21** | **Iterative Deployment** | Thiết lập chu trình theo dõi trôi dạt dữ liệu (Drift Detection) và đóng gói lớp `TelemetryInferencePipeline` tối ưu thời gian suy luận dưới 1ms/mẫu. |
+| **12** | **No Free Lunch Theorem** | Phân tích không gian giả thuyết phân hoạch trực giao của $iTree$ so với giả định phân phối lồi của Baseline. |
+| **13** | **Bias-Variance Tradeoff** | Khảo sát số lượng cây $t$ (kiểm soát Variance, hội tụ tại $t \ge 100$) và kích thước mẫu con $\psi=256$ (kiểm soát Bias). |
+| **14** | **Hyperparameter Tuning** | Thiết lập lưới tìm kiếm không giám sát $\psi \in \{128, 256\}$, $t \in \{50, 100\}$ tối đa hóa độ trải rộng điểm số (Score Spread $\sigma_s$). |
+| **15** | **Evaluation Metrics & Cost Thresholds** | Xây dựng hàm chi phí rủi ro bất đối xứng $\mathcal{L}_{\text{cost}}(\tau; \omega=10)$ và hệ thống 5 cấp độ ngưỡng phân tầng. |
+| **16** | **Cross-Validation** | Thực hiện Unsupervised 3-Fold Cross-Validation trên tập Train, chứng minh tính ổn định cao của phân phối điểm số. |
+| **17** | **Model Training & Inference** | Huấn luyện mô hình sản xuất tối ưu ($n=100, \psi=256$) trên $46,400$ mẫu Train và suy luận trên $11,600$ mẫu Test. |
+| **18** | **Statistical Significance** | Tính khoảng tin cậy 95% ($\text{CI}_{95\%} = [0.4270, 0.4293]$) và kiểm định giả thuyết hai mẫu độc lập $Z$-test ($Z = -31.79, p < 10^{-10}$). |
+| **19** | **Error Analysis** | Phân tích độ bất định tại vùng biên quyết định $s \in [0.48, 0.52]$; thiết lập vùng đệm cảnh báo vàng (Yellow Buffer Zone). |
+| **20** | **Model Interpretability & RCA** | Trích xuất Top 5 mẫu bất thường nhất kèm Root Cause Analysis phi tham số (Percentile Rank) và đánh giá đối chuẩn ROC-AUC/AP. |
+| **21** | **Iterative Deployment** | Thiết lập chu trình theo dõi trôi dạt dữ liệu (Drift Detection) và đóng gói lớp `TelemetryInferencePipeline` tối ưu dưới 1ms/mẫu. |
 
 ---
 
-## 7. Cài Đặt & Hướng Dẫn Vận Hành
+## 8. Cài Đặt & Hướng Dẫn Vận Hành
 
-### 7.1. Cài Đặt Môi Trường
+### 8.1. Cài Đặt Môi Trường
 Yêu cầu Python $\ge$ 3.10 (khuyến nghị Python 3.13). Cài đặt các thư viện phụ thuộc:
 
 ```powershell
 py -3.13 -m pip install -r requirements.txt
 ```
 
-### 7.2. Thực Thi Pipeline Không Giám Sát (Single Run)
-Chạy quy trình huấn luyện, phân tích 5 ngưỡng quyết định và trích xuất Root Cause Analysis:
+### 8.2. Thực Thi Pipeline Không Giám Sát (Single Run)
+Chạy quy trình huấn luyện trên 9 cảm biến, phân tích 5 ngưỡng quyết định và trích xuất Root Cause Analysis:
 
 ```powershell
 py -3.13 run_pipeline.py
 ```
 
-### 7.3. Tinh Chỉnh Siêu Tham Số với Unsupervised 3-Fold CV
+### 8.3. Tinh Chỉnh Siêu Tham Số với Unsupervised 3-Fold CV
 Chạy khảo sát lưới tham số và kiểm định chéo K-Fold không giám sát:
 
 ```powershell
 py -3.13 run_pipeline.py --tune
 ```
 
-### 7.4. Chạy Toàn Bộ Bộ Kiểm Thử Tự Động (Unit Tests)
-Thực thi 19 bài kiểm thử nghiêm ngặt bao quát toán học, thuật toán và tính tái lập:
+### 8.4. Chạy Toàn Bộ Bộ Kiểm Thử Tự Động (Unit Tests)
+Thực thi 21 bài kiểm thử nghiêm ngặt bao quát toán học, kiểm soát rò rỉ nhãn, độ ổn định RCA và tính tái lập:
 
 ```powershell
 py -3.13 -m pytest tests/test_pipeline.py -v
 ```
 
-*Kết quả kiểm thử thực tế:* **19 passed in 1.04s (100% Pass Rate)**.
+*Kết quả kiểm thử thực tế:* **21 passed in 0.53s (100% Pass Rate)**.
 
-### 7.5. Khởi Chạy Jupyter Notebook
-Mở notebook phân tích trực quan toàn diện:
+### 8.5. Khởi Chạy Jupyter Notebook
+Mở notebook phân tích trực quan toàn diện (15 hình vẽ khoa học tương tác):
 
 ```powershell
 jupyter notebook shuttle_anomaly_detection_iforest.ipynb
@@ -175,9 +194,9 @@ jupyter notebook shuttle_anomaly_detection_iforest.ipynb
 
 ---
 
-## 8. Mô Phỏng Suy Luận Thời Gian Thực (Inference Simulation)
+## 9. Mô Phỏng Suy Luận Thời Gian Thực (Inference Simulation)
 
-Đoạn mã mẫu thể hiện cách tích hợp mô hình vào luồng dữ liệu telemetry thời gian thực:
+Đoạn mã mẫu thể hiện cách tích hợp mô hình vào luồng dữ liệu telemetry thời gian thực với 9 kênh cảm biến:
 
 ```python
 import numpy as np
@@ -185,22 +204,22 @@ import pandas as pd
 from model import IsolationForest
 from run_pipeline import Pipeline
 
-# 1. Nạp dữ liệu và huấn luyện mô hình sản xuất
+# 1. Nạp dữ liệu và huấn luyện mô hình sản xuất trên 9 cảm biến
 df = pd.read_csv("shuttle.csv", header=None)
-X_train = df.iloc[:46400].values
+X_train = df.iloc[:46400, :9].values  # Đúng 9 cảm biến, không lấy cột nhãn 10
 
 iforest = IsolationForest(n_estimators=100, max_samples=256, random_state=42)
 pipe = Pipeline(model=iforest)
 pipe.fit(X_train)
 
-# 2. Gói tin telemetry cảm biến mới từ tàu con thoi (10 thuộc tính vật lý)
-test_packet = np.array([[50, 21, 77, 0, 28, 0, 27, 48, 22, 2]])
+# 2. Gói tin telemetry cảm biến mới từ tàu con thoi (9 thuộc tính vật lý)
+test_packet = np.array([[50, 21, 77, 0, 28, 0, 27, 48, 22]])
 
 # 3. Tính Anomaly Score trực tiếp
 score = float(pipe.anomaly_score(test_packet)[0])
 
 # 4. Phân loại theo hệ thống ngưỡng quyết định
-if score >= 0.6436:
+if score >= 0.6308:
     status = "NGUY HIỂM CAO (BÁO ĐỘNG ĐỎ)"
 elif score >= 0.5000:
     status = "CẢNH BÁO BẤT THƯỜNG (MỨC VÀNG)"
@@ -212,10 +231,10 @@ print(f"Anomaly Score: {score:.6f} -> Trạng thái: {status}")
 
 ---
 
-## 9. Cam Kết Tiêu Chuẩn Kỹ Thuật & Học Thuật
+## 10. Cam Kết Tiêu Chuẩn Kỹ Thuật & Học Thuật
 
 1. **Zero Scikit-Learn Dependency:** 100% cấu trúc cây nhị phân, thuật toán phân hoạch không gian và tính toán đường đi được hiện thực thuần túy bằng Python và NumPy.
-2. **Chuẩn Mực Học Không Giám Sát:** Tuyệt đối không sử dụng nhãn mục tiêu ($y$) trong toàn bộ chu trình phát triển.
-3. **Phòng Chống Rò Rỉ Dữ Liệu Tuyệt Đối:** Mọi tham số phân vị và thống kê đều được ước lượng độc quyền trên tập Train trước khi áp dụng cho tập Test.
-4. **Giải Thích Minh Bạch (White-Box AI):** Định vị trực tiếp kênh cảm biến sự cố qua độ lệch $Z$-score đa biến, đáp ứng yêu cầu an toàn khắt khe trong hàng không vũ trụ.
-5. **Độ Tin Cậy & Tinh Gọn Mã Nguồn:** 0 lỗi/cảnh báo linter (Pyrefly 0 diagnostics), 100% không chứa icon/emoji, 19/19 unit tests tự động vượt qua hoàn hảo.
+2. **Loại Trừ Hoàn Toàn Rò Rỉ Nhãn (100% Leak-Free):** Cột 10 được tách biệt hoàn toàn khỏi không gian huấn luyện; ROC-AUC trung thực đạt **0.8474** trên 9 cảm biến thật.
+3. **RCA Phi Tham Số Bền Vững (Percentile Rank RCA):** Khắc phục triệt để sự thất bại của Z-score trên dữ liệu zero-inflated và kurtosis > 2,000; kiểm định ổn định Spearman đạt $\rho \ge 0.98$.
+4. **Phòng Chống Rò Rỉ Dữ Liệu Tuyệt Đối:** Mọi tham số phân vị và thống kê đều được ước lượng độc quyền trên tập Train trước khi áp dụng cho tập Test.
+5. **Độ Tin Cậy & Tinh Gọn Mã Nguồn:** 0 lỗi/cảnh báo linter (Pyrefly 0 diagnostics), 100% không chứa icon/emoji, 21/21 unit tests tự động vượt qua hoàn hảo.

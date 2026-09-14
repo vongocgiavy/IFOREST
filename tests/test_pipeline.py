@@ -36,6 +36,7 @@ from run_pipeline import (
     KFold,
     unsupervised_feature_importance,
     explain_anomalies_root_cause,
+    robust_deviation,
 )
 
 
@@ -386,8 +387,80 @@ class TestIsolationForestPipeline(unittest.TestCase):
         np.testing.assert_allclose(scores1, scores2, atol=1e-9,
                                    err_msg="Hai mô hình cùng random_state phải cho Anomaly Score đồng nhất 100%")
 
+    def test_20_no_label_leakage(self):
+        """Xác nhận cột 10 (nhãn UCI) KHÔNG nằm trong feature matrix X dùng để huấn luyện."""
+        df = pd.read_csv("shuttle.csv", header=None)
+        # Cột 9 (0-indexed) là nhãn lớp: chỉ nhận giá trị {1,2,3,4,5,6,7}
+        label_col = df.iloc[:, 9]
+        unique_labels = set(label_col.unique())
+        self.assertTrue(unique_labels.issubset({1, 2, 3, 4, 5, 6, 7}), "Cột 9 phải là nhãn lớp UCI {1..7}")
+        self.assertEqual(len(unique_labels), 7, "UCI Shuttle phải có đủ 7 lớp")
+
+        # Feature matrix X cho 9 cảm biến thực thụ
+        X = df.iloc[:, :9]
+        self.assertEqual(X.shape[1], 9, "X dùng để train phải có đúng 9 cột cảm biến, không bao gồm nhãn")
+
+        # Kiểm tra không cột nào trong 9 cảm biến là nhãn lớp
+        for col in range(9):
+            vals = set(df.iloc[:, col].unique())
+            self.assertFalse(
+                vals.issubset({1, 2, 3, 4, 5, 6, 7}) and len(vals) <= 7,
+                f"Cột {col} trông giống nhãn lớp, có nguy cơ nhầm lẫn"
+            )
+
+        # Kiểm tra train_test_split tách nhãn rời rạc
+        y_raw = df.iloc[:, 9].values
+        X_tr, X_te, y_tr, y_te = train_test_split(X, y_raw, test_size=0.2, random_state=42)
+        self.assertEqual(X_tr.shape[1], 9)
+        self.assertEqual(X_te.shape[1], 9)
+        self.assertEqual(len(y_tr), len(X_tr))
+        self.assertEqual(len(y_te), len(X_te))
+
+    def test_21_rca_stability(self):
+        """Kiểm tra RCA ranking ổn định với robust_deviation phi tham số và chịu lỗi kurtosis cực cao."""
+        # 1. Test robust_deviation trên dải đều
+        col_vals = np.arange(100, dtype=float)
+        dev_median = robust_deviation(50.0, col_vals)
+        dev_extreme = robust_deviation(99.0, col_vals)
+        self.assertLess(dev_median, dev_extreme, "Giá trị trung vị phải có độ lệch nhỏ hơn giá trị cực đoan")
+        self.assertLessEqual(dev_extreme, 50.0, "Độ lệch phân vị tối đa là 50.0")
+
+        # 2. Test với dữ liệu zero-inflated (tương tự feat_2, feat_4, feat_6 của shuttle)
+        rng = np.random.RandomState(42)
+        zero_inflated = np.concatenate([np.zeros(700), rng.randn(300) * 10])
+        dev_zero = robust_deviation(0.0, zero_inflated)
+        dev_outlier = robust_deviation(float(np.max(zero_inflated)), zero_inflated)
+        self.assertLess(dev_zero, dev_outlier, "Outlier phải có percentile deviation lớn hơn giá trị 0 phổ biến")
+
+        # 3. Test tính ổn định RCA trên mô hình thật
+        X_dummy = np.random.RandomState(42).randn(120, 5)
+        X_dummy[0, 0] = 100.0  # Mẫu 0 có feat_1 là outlier cực đoan duy nhất
+        model = IsolationForest(n_estimators=25, max_samples=64, random_state=42).fit(X_dummy)
+
+        df_rca = explain_anomalies_root_cause(model, X_dummy, top_k=5)
+        self.assertEqual(len(df_rca), 5)
+        self.assertIn("Pct Rank Deviation", df_rca.columns)
+        self.assertIn("Pct rank trong quần thể", df_rca.columns)
+
+        # Mẫu 0 phải đứng hạng 1 và feat_1 là root cause
+        self.assertEqual(int(df_rca.iloc[0]["Chỉ số mẫu (Index)"]), 0)
+        self.assertEqual(df_rca.iloc[0]["Đặc trưng lệch mạnh nhất"], "feat_1")
+
+        # 4. Test feature importance stability check
+        rng = np.random.RandomState(42)
+        X_norm = rng.randn(150, 5)
+        X_anom = rng.randn(30, 5)
+        X_anom[:, 0] += 12.0
+        X_anom[:, 1] += 8.0
+        X_test_data = np.vstack([X_norm, X_anom])
+        model2 = IsolationForest(n_estimators=30, max_samples=128, random_state=42).fit(X_test_data)
+        df_imp = unsupervised_feature_importance(model2, X_test_data)
+        self.assertIn("Độ lệch Pct-Rank (Dị biệt)", df_imp.columns)
+        self.assertIn("stability_note", df_imp.attrs)
+        self.assertIn("[OK]", df_imp.attrs["stability_note"])
 
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

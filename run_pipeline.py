@@ -252,11 +252,35 @@ def threshold_from_contamination(scores, contamination):
 # 3. ĐỘ QUAN TRỌNG THUỘC TÍNH & PHÂN TÍCH CĂN NGUYÊN KHÔNG GIÁM SÁT
 # ==============================================================================
 
+def robust_deviation(x_val: float, col_vals: np.ndarray) -> float:
+    """
+    Đo lệch chuẩn phi tham số bằng Percentile Rank (robust với phân phối cực lệch).
+
+    Trả về khoảng cách phần trăm so với trung vị [0.0, 50.0].
+    Không bị ảnh hưởng bởi outlier cực đoan hay kurtosis cao (cột zero-inflated).
+    Thay thế Z-score trong RCA và Feature Importance.
+
+    Tham số:
+    ----------
+    x_val    : giá trị cần đo độ lệch.
+    col_vals : toàn bộ giá trị của cột đó trong tập dữ liệu (dùng để xếp hạng).
+
+    Trả về:
+    ----------
+    float trong [0.0, 50.0] — 0.0 = ở đúng trung vị, 50.0 = ở cực đầu phân phối.
+    """
+    sorted_vals = np.sort(col_vals)
+    idx = int(np.searchsorted(sorted_vals, x_val, side='right'))
+    pct = idx / len(sorted_vals) * 100.0
+    return abs(pct - 50.0)
+
+
 def unsupervised_feature_importance(model: IsolationForest, X, feature_names=None):
     """
     Tính mức độ quan trọng không giám sát của từng đặc trưng (Vectorized NumPy):
     1. Tương quan tuyến tính Pearson giữa giá trị đặc trưng và Anomaly Score: corr(X_j, s(x)).
-    2. Độ lệch chuẩn trung bình (Z-score Deviation) của các điểm bất thường (s >= 0.5) so với quần thể.
+    2. Median Percentile Deviation (non-parametric, robust) của nhóm bất thường (s >= 0.5)
+       so với toàn quần thể — thay thế Z-score bị nhiễu bởi kurtosis cực cao.
     """
     X_arr = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
     scores = model.anomaly_score(X_arr)
@@ -266,7 +290,6 @@ def unsupervised_feature_importance(model: IsolationForest, X, feature_names=Non
     anom_mask = (scores >= 0.5)
     mean_pop = np.mean(X_arr, axis=0)
     std_pop = np.std(X_arr, axis=0)
-    safe_std_pop = np.where(std_pop == 0, 1.0, std_pop)
 
     # 1. Tương quan Pearson vector hóa
     std_sc = float(np.std(scores))
@@ -278,15 +301,50 @@ def unsupervised_feature_importance(model: IsolationForest, X, feature_names=Non
     else:
         corr_arr = np.zeros(n_features, dtype=float)
 
-    # 2. Độ lệch chuẩn Z-Score vector hóa của nhóm điểm bất thường
+    # 2. Median Percentile Deviation của nhóm bất thường (Robust, non-parametric)
+    # Đo trung vị của percentile rank của nhóm anomaly so với median quần thể (50%).
+    # Không bị ảnh hưởng bởi outlier cực đoan hay kurtosis cao như Z-score.
     if np.any(anom_mask):
-        anom_mean = np.mean(X_arr[anom_mask], axis=0)
-        z_dev_arr = np.abs(anom_mean - mean_pop) / safe_std_pop
+        pct_dev_arr = np.zeros(n_features, dtype=float)
+        for j in range(n_features):
+            sorted_col = np.sort(X_arr[:, j])
+            anom_vals = X_arr[anom_mask, j]
+            # Percentile rank của từng mẫu bất thường trong cột j
+            pct_ranks = np.searchsorted(sorted_col, anom_vals, side='right') / n_samples * 100.0
+            # Median khoảng cách từ trung vị (50%) -> bất biến với outlier cực đoan
+            pct_dev_arr[j] = float(np.median(np.abs(pct_ranks - 50.0)))
     else:
-        z_dev_arr = np.zeros(n_features, dtype=float)
+        pct_dev_arr = np.zeros(n_features, dtype=float)
 
     abs_corr = np.abs(corr_arr)
-    comp_importance = abs_corr * 0.5 + np.minimum(z_dev_arr, 5.0) / 5.0 * 0.5
+    # Chuẩn hóa pct_dev_arr về [0, 1]: max có thể là 50.0
+    pct_dev_norm = np.minimum(pct_dev_arr, 50.0) / 50.0
+    comp_importance = abs_corr * 0.5 + pct_dev_norm * 0.5
+
+    # Stability check: Spearman rank correlation giữa 2 sub-sample anomalies (interleaved split)
+    stability_note = ""
+    if np.sum(anom_mask) >= 10:
+        anom_indices = np.where(anom_mask)[0]
+        def _pct_dev_col(X_sub, X_ref, j):
+            sorted_ref = np.sort(X_ref[:, j])
+            vals = X_sub[:, j]
+            ranks = np.searchsorted(sorted_ref, vals, side='right') / len(X_ref) * 100.0
+            return float(np.median(np.abs(ranks - 50.0)))
+        dev1 = np.array([_pct_dev_col(X_arr[anom_indices[::2]], X_arr, j) for j in range(n_features)])
+        dev2 = np.array([_pct_dev_col(X_arr[anom_indices[1::2]], X_arr, j) for j in range(n_features)])
+        # Spearman rho via rank correlation
+        rank1 = np.argsort(np.argsort(-dev1)).astype(float)
+        rank2 = np.argsort(np.argsort(-dev2)).astype(float)
+        std1 = np.std(rank1)
+        std2 = np.std(rank2)
+        if std1 > 0 and std2 > 0:
+            rho = float(np.mean((rank1 - np.mean(rank1)) * (rank2 - np.mean(rank2))) / (std1 * std2))
+        else:
+            rho = 1.0
+        if rho < 0.6:
+            stability_note = f"[CANH BAO] Stability thap: Spearman rho={rho:.2f} < 0.6 (ranking khong on dinh giua cac sub-sample anomaly)"
+        else:
+            stability_note = f"[OK] Stability check: Spearman rho={rho:.2f} >= 0.6"
 
     rows = []
     for j in range(n_features):
@@ -294,42 +352,52 @@ def unsupervised_feature_importance(model: IsolationForest, X, feature_names=Non
             'Đặc trưng': names[j],
             'Tương quan Pearson |r|': float(abs_corr[j]),
             'Hệ số tương quan r': float(corr_arr[j]),
-            'Độ lệch Z-Score (Dị biệt)': float(z_dev_arr[j]),
+            'Độ lệch Pct-Rank (Dị biệt)': float(pct_dev_arr[j]),
             'Chỉ số quan trọng tổng hợp': float(comp_importance[j])
         })
 
     df_imp = pd.DataFrame(rows).sort_values(by='Chỉ số quan trọng tổng hợp', ascending=False).reset_index(drop=True)
+    if stability_note:
+        df_imp.attrs['stability_note'] = stability_note
     return df_imp
 
 
 
 def explain_anomalies_root_cause(model: IsolationForest, X, top_k: int = 10, feature_names=None):
-    """Trích xuất Top-K mẫu bất thường nhất và chẩn đoán đặc trưng lệch mạnh nhất (Root Cause)."""
+    """
+    Trích xuất Top-K mẫu bất thường nhất và chẩn đoán đặc trưng lệch mạnh nhất (Root Cause).
+
+    Sử dụng Percentile Rank Deviation (non-parametric, robust) thay cho Z-score.
+    Phù hợp với dữ liệu zero-inflated, kurtosis cực cao (như NASA Shuttle col1, col3, col5).
+    """
     X_arr = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
     scores = model.anomaly_score(X_arr)
     n_features = X_arr.shape[1]
     names = feature_names if feature_names is not None else [f"feat_{i+1}" for i in range(n_features)]
 
-    mean_pop = np.mean(X_arr, axis=0)
-    std_pop = np.std(X_arr, axis=0)
-    std_pop[std_pop == 0] = 1.0
+    # Pre-sort mỗi cột một lần để tính percentile rank
+    sorted_cols = [np.sort(X_arr[:, j]) for j in range(n_features)]
 
     top_indices = np.argsort(-scores)[:top_k]
     reports = []
     for rank, idx in enumerate(top_indices, 1):
         sample = X_arr[idx]
         sc = float(scores[idx])
-        z_scores = (sample - mean_pop) / std_pop
-        max_dev_feat_idx = int(np.argmax(np.abs(z_scores)))
+        # Percentile Rank Deviation: robust với zero-inflated & high-kurtosis data
+        pct_devs = np.array([
+            abs(np.searchsorted(sorted_cols[j], sample[j], side='right') / len(X_arr) * 100.0 - 50.0)
+            for j in range(n_features)
+        ])
+        max_dev_feat_idx = int(np.argmax(pct_devs))
         reports.append({
             'Hạng': rank,
             'Chỉ số mẫu (Index)': int(idx),
             'Anomaly Score': f"{sc:.6f}",
             'Mức cảnh báo': 'NGUY HIỂM CAO' if sc >= 0.60 else 'CẢNH BÁO BẤT THƯỜNG',
             'Đặc trưng lệch mạnh nhất': names[max_dev_feat_idx],
-            'Z-score lệch': f"{z_scores[max_dev_feat_idx]:+.2f}σ",
+            'Pct Rank Deviation': f"{pct_devs[max_dev_feat_idx]:.1f}% khỏi trung vị",
             'Giá trị thực': f"{sample[max_dev_feat_idx]:.2f}",
-            'Giá trị TB quần thể': f"{mean_pop[max_dev_feat_idx]:.2f}"
+            'Pct rank trong quần thể': f"{np.searchsorted(sorted_cols[max_dev_feat_idx], sample[max_dev_feat_idx], side='right') / len(X_arr) * 100.0:.1f}%"
         })
     return pd.DataFrame(reports)
 
@@ -605,23 +673,48 @@ def main():
         print(f"[!] Lỗi: Không tìm thấy file dữ liệu '{data_path}'!")
         sys.exit(1)
 
-    # 1. Nạp dữ liệu không tiêu đề (Header=None)
+    # 1. Nap du lieu khong tieu de (Header=None)
     df_raw = pd.read_csv(data_path, header=None)
-    n_cols = df_raw.shape[1]
-    feature_cols = [f"feat_{i+1}" for i in range(n_cols)]
-    df_raw.columns = feature_cols
-    X = df_raw.copy()
+    n_raw_cols = df_raw.shape[1]
+    all_col_names = [f"feat_{i+1}" for i in range(n_raw_cols)]
+    df_raw.columns = all_col_names
 
-    print(f"[*] Nạp thành công: {len(X):,} dòng x {len(feature_cols)} đặc trưng số.")
-    print(f"[*] Danh sách đặc trưng: {feature_cols}")
-    print(f"[*] Trạng thái nhãn: HOÀN TOÀN KHÔNG CÓ NHÃN (100% Unsupervised Anomaly Detection).")
+    # --- SUA LOI RO RI NHAN (Label Leakage Fix) ---
+    # shuttle.csv co 10 cot: 9 cam bien thuc su + 1 nhan lop UCI (col[9] = feat_10).
+    # Xac nhan: phan phoi feat_10 = {1:45586, 2:50, 3:171, 4:8903, 5:3267, 6:10, 7:13}
+    # khop chinh xac voi UCI Statlog Shuttle benchmark (class label 1-7).
+    # --> feat_10 KHONG phai cam bien; no la nhan lop nguyen ban.
+    # --> Mo hinh "khong giam sat" phai TUYET DOI KHONG nhin thay nhan nay khi huan luyen.
+    SENSOR_COLS = [f"feat_{i+1}" for i in range(9)]   # Chi 9 cam bien thuc su
+    LABEL_COL   = "feat_10"                             # Nhan UCI lop 1-7
 
-    # 2. Phân chia Train/Test không giám sát
-    X_train, X_test = train_test_split(X, test_size=test_size, random_state=random_state)
-    assert set(X_train.index).isdisjoint(set(X_test.index)), "Lỗi: Rò rỉ dữ liệu giữa Train và Test!"
+    # Tach nhan de su dung NGOAI: external validation sau khi train (khong dung trong fit)
+    # Class 1 (Rad Flow) = binh thuong (78.6% du lieu), class 2-7 = bat thuong
+    y_raw = df_raw[LABEL_COL].values.astype(int)
+    X = df_raw[SENSOR_COLS].copy()                     # Chi 9 cot cam bien
+    feature_cols = SENSOR_COLS
 
-    print(f"[*] Phân chia tập dữ liệu: Train = {len(X_train):,} mẫu (80%) | Test = {len(X_test):,} mẫu (20%)")
-    print(f"[*] Kiểm tra tính phân lập: Disjoint = True (Chỉ số rời rạc 100%).")
+    print(f"[*] Nap thanh cong: {len(X):,} dong x {len(feature_cols)} cam bien so (sau khi tach nhan).")
+    print(f"[*] Danh sach cam bien: {feature_cols}")
+    print(f"[*] Nhan lop UCI (feat_10): {LABEL_COL} da duoc TACH RA khoi feature matrix.")
+    print(f"[*] Nhan se chi duoc dung cho External Supervised Validation SAU khi huan luyen.")
+    print(f"[*] Trang thai huan luyen: HOAN TOAN KHONG CO NHAN (100% Unsupervised Anomaly Detection).")
+
+    # 2. Phan chia Train/Test khong giam sat + giu nhan de validation sau
+    # Truyen y_raw de lay y_train, y_test tuong ung (model KHONG dung y khi fit)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y_raw, test_size=test_size, random_state=random_state
+    )
+    assert set(X_train.index).isdisjoint(set(X_test.index)), "Loi: Ro ri du lieu giua Train va Test!"
+
+    # Binary label cho external validation: 1 = binh thuong (class 1), 0 = bat thuong (class 2-7)
+    # Dao nguoc de ROC-AUC dung voi anomaly score (score cao = bat thuong)
+    y_eval = (y_test != 1).astype(int)   # 1 = bat thuong (ground truth), 0 = binh thuong
+    y_eval_rate = float(np.mean(y_eval)) * 100.0
+
+    print(f"[*] Phan chia tap du lieu: Train = {len(X_train):,} mau (80%) | Test = {len(X_test):,} mau (20%)")
+    print(f"[*] Kiem tra tinh phan lap: Disjoint = True (Chi so roi rac 100%).")
+    print(f"[*] Ty le bat thuong thuc (External Label, tap Test): {y_eval_rate:.2f}% ({int(np.sum(y_eval)):,} mau)")
 
     model_contam = "auto" if contamination_arg.lower() == "auto" else float(contamination_arg)
 
@@ -724,25 +817,61 @@ def main():
     print(f"{'5. Ngưỡng thống kê (Mean + 2*Std)':<35} | {th_stat_3sigma:<10.4f} | {int(np.sum(test_scores >= th_stat_3sigma)):<18,d} | {(np.sum(test_scores >= th_stat_3sigma)/len(test_scores)*100):<10.2f}%")
     print("=" * 78)
 
-    # 6. Trích xuất Top-5 mẫu dị biệt nhất (Root Cause Analysis)
-    print("\n[*] TRÍCH XUẤT TOP 5 MẪU BẤT THƯỜNG NHẤT (ROOT CAUSE ANALYSIS):")
+    # 6. Trich xuat Top-5 mau di biet nhat (Root Cause Analysis)
+    print("\n[*] TRICH XUAT TOP 5 MAU BAT THUONG NHAT (ROOT CAUSE ANALYSIS - PERCENTILE RANK):")
     top_anomalies_df = explain_anomalies_root_cause(best_model, X_test, top_k=5, feature_names=feature_cols)
     print(top_anomalies_df.to_string(index=False))
 
-    # 7. Độ quan trọng thuộc tính không giám sát
-    print("\n[*] ĐỘ QUAN TRỌNG THUỘC TÍNH KHÔNG GIÁM SÁT (UNSUPERVISED FEATURE IMPORTANCE):")
+    # 7. Do quan trong thuoc tinh khong giam sat (Percentile-based)
+    print("\n[*] DO QUAN TRONG THUOC TINH KHONG GIAM SAT (PERCENTILE-BASED FEATURE IMPORTANCE):")
     feat_imp_df = unsupervised_feature_importance(best_model, X_test, feature_names=feature_cols)
     print(feat_imp_df.to_string(index=False))
+    if 'stability_note' in feat_imp_df.attrs:
+        print(f"\n    {feat_imp_df.attrs['stability_note']}")
 
     top3_feats = feat_imp_df.head(3)['Đặc trưng'].tolist()
-    print(f"\n[*] Top 3 đặc trưng ảnh hưởng mạnh nhất đến sự bất thường: {top3_feats}")
+    print(f"\n[*] Top 3 dac trung anh huong manh nhat den su bat thuong: {top3_feats}")
 
-    # 8. Kiểm tra suy luận mẫu thời gian thực
+    # 8. SUPERVISED VALIDATION (External Ground Truth — chi de kiem tra, khong dung trong train)
+    print("\n" + "=" * 70)
+    print("SUPERVISED VALIDATION (EXTERNAL GROUND TRUTH — KHONG DUNG TRONG HUAN LUYEN)")
+    print("=" * 70)
+    print("[NOTE] Mo hinh chi nhan X (9 cam bien). Nhan y chi duoc dung SAU khi predict")
+    print("       de do luong kha nang phat hien thuc te, khong anh huong den huan luyen.")
+    print("-" * 70)
+
+    # Nhan binary: 1 = bat thuong (class UCI 2-7), 0 = binh thuong (class UCI 1)
+    roc_auc = roc_auc_score(y_eval, test_scores)
+    ap = average_precision_score(y_eval, test_scores)
+
+    # Danh gia voi nguong ly thuyet (0.5) va nguong top 5%
+    y_pred_theo = (test_scores >= th_theoretical).astype(int)
+    y_pred_top5 = (test_scores >= th_top5).astype(int)
+
+    prec_theo = precision_score(y_eval, y_pred_theo)
+    rec_theo  = recall_score(y_eval, y_pred_theo)
+    f1_theo   = f1_score(y_eval, y_pred_theo)
+
+    prec_top5 = precision_score(y_eval, y_pred_top5)
+    rec_top5  = recall_score(y_eval, y_pred_top5)
+    f1_top5   = f1_score(y_eval, y_pred_top5)
+
+    print(f"  ROC-AUC (Leak-Free, 9 cam bien)     : {roc_auc:.4f}")
+    print(f"  Average Precision (AP)               : {ap:.4f}")
+    print(f"  Ty le bat thuong thuc (y_eval=1)     : {y_eval_rate:.2f}%")
+    print("-" * 70)
+    print(f"  Voi nguong ly thuyet (score >= 0.5):")
+    print(f"    Precision = {prec_theo:.4f} | Recall = {rec_theo:.4f} | F1 = {f1_theo:.4f}")
+    print(f"  Voi nguong Top 5% (score >= {th_top5:.4f}):")
+    print(f"    Precision = {prec_top5:.4f} | Recall = {rec_top5:.4f} | F1 = {f1_top5:.4f}")
+    print("=" * 70)
+
+    # 9. Kiem tra suy luan mau thoi gian thuc
     pipe = Pipeline(model=best_model)
     sample_first = X_test.iloc[0].to_dict()
     sample_score = float(pipe.anomaly_score(np.array([list(sample_first.values())]))[0])
-    status = "BẤT THƯỜNG" if sample_score >= th_theoretical else "BÌNH THƯỜNG"
-    print(f"\n[+] Kiểm tra suy luận trên mẫu thực tế: Score = {sample_score:.6f} -> Trạng thái: {status}")
+    status = "BAT THUONG" if sample_score >= th_theoretical else "BINH THUONG"
+    print(f"\n[+] Kiem tra suy luan tren mau thuc te: Score = {sample_score:.6f} -> Trang thai: {status}")
     print("=" * 70)
 
 
