@@ -365,39 +365,66 @@ def unsupervised_feature_importance(model: IsolationForest, X, feature_names=Non
 
 def explain_anomalies_root_cause(model: IsolationForest, X, top_k: int = 10, feature_names=None):
     """
-    Trích xuất Top-K mẫu bất thường nhất và chẩn đoán đặc trưng lệch mạnh nhất (Root Cause).
+    Trích xuất Top-K mẫu bất thường nhất và chẩn đoán căn nguyên (Root Cause Analysis).
 
-    Sử dụng Percentile Rank Deviation (non-parametric, robust) thay cho Z-score.
-    Phù hợp với dữ liệu zero-inflated, kurtosis cực cao (như NASA Shuttle col1, col3, col5).
+    Cải tiến chống bão hòa phân vị (Percentile Saturation & Tie-Breaking):
+    1. Sử dụng Percentile Rank Deviation làm độ đo chính phi tham số, miễn nhiễm với kurtosis > 2,000.
+    2. Khi các đặc trưng cùng chạm ngưỡng cực đoan (50.0% phân vị), áp dụng chuẩn hóa khoảng cách
+       Robust IQR Distance (|x - Median| / IQR) làm Tie-Breaker để xác định đặc trưng vượt trội tuyệt đối.
+    3. Báo cáo đồng thời tất cả các đặc trưng đồng cực đoan (Co-dominant Features) để không bỏ sót
+       bất kỳ cảm biến nào cùng phát sinh sự cố song song.
     """
     X_arr = X.values if hasattr(X, "values") else np.asarray(X, dtype=float)
     scores = model.anomaly_score(X_arr)
-    n_features = X_arr.shape[1]
+    n_samples, n_features = X_arr.shape
     names = feature_names if feature_names is not None else [f"feat_{i+1}" for i in range(n_features)]
 
-    # Pre-sort mỗi cột một lần để tính percentile rank
+    # Pre-sort mỗi cột và tính trước các thống kê Robust
     sorted_cols = [np.sort(X_arr[:, j]) for j in range(n_features)]
+    medians = np.median(X_arr, axis=0)
+    q25 = np.percentile(X_arr, 25, axis=0)
+    q75 = np.percentile(X_arr, 75, axis=0)
+    iqrs = np.maximum(q75 - q25, 1.0)
 
     top_indices = np.argsort(-scores)[:top_k]
     reports = []
     for rank, idx in enumerate(top_indices, 1):
         sample = X_arr[idx]
         sc = float(scores[idx])
-        # Percentile Rank Deviation: robust với zero-inflated & high-kurtosis data
-        pct_devs = np.array([
-            abs(np.searchsorted(sorted_cols[j], sample[j], side='right') / len(X_arr) * 100.0 - 50.0)
+
+        # Phân vị 2 phía độ chính xác cao
+        pct_ranks = np.array([
+            np.searchsorted(sorted_cols[j], sample[j], side='right') / n_samples * 100.0
             for j in range(n_features)
         ])
-        max_dev_feat_idx = int(np.argmax(pct_devs))
+        pct_devs = np.abs(pct_ranks - 50.0)
+
+        # Tie-breaker: khoảng cách Robust IQR chuẩn hóa
+        iqr_devs = np.abs(sample - medians) / iqrs
+        # Điểm tổng hợp: pct_dev là chính [0..50], phần bù IQR giải quyết triệt để các trường hợp hòa
+        composite_dev = pct_devs + np.minimum(iqr_devs, 1000.0) * 1e-4
+
+        max_dev_feat_idx = int(np.argmax(composite_dev))
+        max_pct = pct_devs[max_dev_feat_idx]
+
+        # Xác định các đặc trưng đồng cực đoan (lệch sát max trong vòng 0.15% và >= 49.0%)
+        co_extreme_indices = [
+            j for j in range(n_features)
+            if j != max_dev_feat_idx and pct_devs[j] >= max_pct - 0.15 and pct_devs[j] >= 49.0
+        ]
+        co_extreme_indices.sort(key=lambda j: composite_dev[j], reverse=True)
+        co_str = ', '.join([names[j] for j in co_extreme_indices]) if co_extreme_indices else '-'
+
         reports.append({
             'Hạng': rank,
             'Chỉ số mẫu (Index)': int(idx),
             'Anomaly Score': f"{sc:.6f}",
             'Mức cảnh báo': 'NGUY HIỂM CAO' if sc >= 0.60 else 'CẢNH BÁO BẤT THƯỜNG',
             'Đặc trưng lệch mạnh nhất': names[max_dev_feat_idx],
-            'Pct Rank Deviation': f"{pct_devs[max_dev_feat_idx]:.1f}% khỏi trung vị",
+            'Đặc trưng đồng cực đoan': co_str,
+            'Pct Rank Deviation': f"{pct_devs[max_dev_feat_idx]:.2f}% khỏi trung vị",
             'Giá trị thực': f"{sample[max_dev_feat_idx]:.2f}",
-            'Pct rank trong quần thể': f"{np.searchsorted(sorted_cols[max_dev_feat_idx], sample[max_dev_feat_idx], side='right') / len(X_arr) * 100.0:.1f}%"
+            'Pct rank trong quần thể': f"{pct_ranks[max_dev_feat_idx]:.2f}%"
         })
     return pd.DataFrame(reports)
 

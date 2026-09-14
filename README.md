@@ -97,13 +97,18 @@ Hệ thống thiết lập cơ chế đánh giá đa tầng dựa trên phân ph
 
 ## 5. Chẩn Đoán Căn Nguyên & Tính Ổn Định (RCA & Feature Importance)
 
-Hệ thống ứng dụng phương pháp phi tham số (Non-parametric) để đảm bảo độ bền vững trước hiện tượng zero-inflated:
+Hệ thống ứng dụng phương pháp phi tham số (Non-parametric) kết hợp cơ chế phá vỡ thế hòa (Tie-Breaking) để đảm bảo độ bền vững tuyệt đối trước hiện tượng zero-inflated và bão hòa phân vị:
 
 1. **Đo lệch chuẩn phi tham số (Percentile Rank Deviation):**
    - Thay thế $Z$-score bằng độ lệch phân vị so với trung vị:
      $$\text{Dev}_j(x) = \left| \text{PercentileRank}(x, X_j) - 50.0 \right|$$
-   - Miền giá trị $[0.0, 50.0]$: 0.0 nghĩa là nằm tại trung vị, 50.0 nghĩa là nằm ở điểm biên cực đoan của phân phối. Hoàn toàn miễn nhiễm trước kurtosis cực hạn.
-2. **Độ quan trọng đặc trưng không giám sát (Percentile-Based UFI):**
+   - Miền giá trị $[0.0, 50.0]$: 0.0 nghĩa là nằm tại trung vị, 50.0 nghĩa là nằm ở điểm biên cực đoan của phân phối. Hoàn toàn miễn nhiễm trước kurtosis cực hạn ($> 2,000$).
+2. **Cơ chế Phá Vỡ Thế Hòa (Robust IQR Tie-Breaking) & Báo Cáo Đồng Cực Đoan (Co-dominant Anomalies):**
+   - *Hạn chế đã giải quyết:* Khi nhiều cảm biến cùng chạm giá trị biên (phân vị tiệm cận $50.0\%$), phương pháp phân vị thông thường dễ bị bão hòa, dẫn đến việc `np.argmax` chỉ chọn ngẫu nhiên 1 biến đầu tiên và bỏ sót các kênh cảm biến khác cũng đang gặp sự cố nghiêm trọng (ví dụ mẫu `idx=3228` có cả `feat_1`, `feat_2`, `feat_7` cùng ở mức $49.95\% - 49.99\%$).
+   - *Giải pháp triệt để:*
+     - Tích hợp độ lệch chuẩn hóa theo khoảng tứ phân vị Robust IQR: $\text{Dev}_{\text{IQR}, j} = \frac{|x_j - \text{Median}_j|}{\text{IQR}_j}$ làm tiêu chí phụ (Tie-Breaker), xác định chính xác và tất định kênh cảm biến lệch xa nhất trong không gian đuôi.
+     - Bổ sung trường thông tin **`Đặc trưng đồng cực đoan` (Co-dominant Features)**: Tự động phát hiện và báo cáo toàn bộ các cảm biến đồng hạng lệch sát cực đại ($\ge \max - 0.15\%$ và $\ge 49.0\%$), đảm bảo kỹ sư buồng lái nắm bắt trọn vẹn mọi sự cố đa biến mà không bị che khuất.
+3. **Độ quan trọng đặc trưng không giám sát (Percentile-Based UFI):**
    - Kết hợp tương quan tuyến tính Pearson $|r(X_j, s)|$ với trung vị độ lệch phân vị của nhóm bất thường ($s \ge 0.5$).
    - **Top cảm biến chủ đạo:** `feat_8`, `feat_9`, `feat_1`.
    - **Kiểm định tính ổn định xếp hạng (Spearman Stability Test):** Hệ số Spearman rho giữa 2 nửa nhóm bất thường đạt $\rho \ge 0.98$ (vượt xa ngưỡng yêu cầu $0.60$), chứng minh thứ hạng cảm biến hoàn toàn ổn định và không bị phụ thuộc vào phân chia mẫu ngẫu nhiên.
