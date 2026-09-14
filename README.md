@@ -113,7 +113,7 @@ Toàn bộ quy trình trong dự án và Jupyter Notebook [shuttle_anomaly_detec
 | **15** | **Evaluation Metrics** | Xây dựng hệ thống 5 cấp độ ngưỡng phân tầng (Lý thuyết $0.50$, Top 5%, Top 1%, Top 0.1%, Gaussian $\mu + 2\sigma$). |
 | **16** | **Cross-Validation** | Thực hiện Unsupervised 3-Fold Cross-Validation trên tập Train, chứng minh tính ổn định cao của phân phối điểm số trên từng fold kiểm định. |
 | **17** | **Model Training & Inference** | Huấn luyện mô hình sản xuất tối ưu ($n=100, \psi=256$) trên $46,400$ mẫu Train và thực hiện suy luận trên $11,600$ mẫu Test. |
-| **18** | **Statistical Significance** | Tính khoảng tin cậy 95% ($\text{CI}_{95\%} = [0.3957, 0.3986]$) và kiểm định giả thuyết hai mẫu độc lập $Z$-test ($Z = -34.81, p < 10^{-50}$). |
+| **18** | **Statistical Significance** | Tính khoảng tin cậy 95% ($\text{CI}_{95\%} = [0.4353, 0.4377]$) và kiểm định giả thuyết hai mẫu độc lập $Z$-test ($Z = -33.84, p < 10^{-10}$). |
 | **19** | **Error Analysis** | Phân tích độ bất định tại vùng biên quyết định $s \in [0.48, 0.52]$; thiết lập cơ chế vùng đệm cảnh báo vàng (Yellow Buffer Zone) kết hợp chuyên gia. |
 | **20** | **Model Interpretability & RCA** | Trích xuất Top 5 mẫu bất thường nhất kèm chẩn đoán căn nguyên (RCA) và phân tích mật độ phân bố KDE của Top 3 cảm biến chủ đạo. |
 | **21** | **Iterative Deployment** | Thiết lập chu trình theo dõi trôi dạt dữ liệu (Drift Detection) và đóng gói lớp `TelemetryInferencePipeline` tối ưu thời gian suy luận dưới 1ms/mẫu. |
