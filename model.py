@@ -5,6 +5,7 @@ Chuẩn thuật toán Isolation Forest (Liu et al., 2008) - Zero Scikit-Learn De
 
 import math
 from typing import List, Optional, Union
+# pyrefly: ignore [missing-import]
 import numpy as np
 
 
