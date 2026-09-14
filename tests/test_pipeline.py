@@ -31,36 +31,39 @@ from run_pipeline import (
     permutation_importance_scratch,
     train_test_split,
     threshold_from_contamination,
+    KFold,
+    unsupervised_feature_importance,
+    explain_anomalies_root_cause,
 )
 
 
 class TestIsolationForestPipeline(unittest.TestCase):
 
     def test_01_data_files_exist(self):
-        """Kiểm tra sự tồn tại của các file dữ liệu chính."""
+        """Kiểm tra sự tồn tại của các file dữ liệu và mã nguồn chính."""
         self.assertTrue(os.path.exists("shuttle.csv"), "shuttle.csv phải tồn tại")
-        self.assertTrue(os.path.exists("shuttle_preprocessed.csv"), "shuttle_preprocessed.csv phải tồn tại sau tiền xử lý")
+        self.assertTrue(os.path.exists("model.py"), "model.py phải tồn tại")
+        self.assertTrue(os.path.exists("run_pipeline.py"), "run_pipeline.py phải tồn tại")
 
-    def test_02_preprocessed_data_integrity(self):
-        """Kiểm tra tính toàn vẹn của dữ liệu sau tiền xử lý."""
-        df = pd.read_csv("shuttle_preprocessed.csv")
-        self.assertEqual(len(df), 58000, f"Dữ liệu phải có đúng 58,000 dòng, hiện có {len(df)}")
-        self.assertIn("label", df.columns, "Cột 'label' phải tồn tại")
-        self.assertEqual(set(df["label"].unique()), {0, 1}, "Nhãn phải là nhị phân {0, 1}")
+    def test_02_raw_unlabelled_data_integrity(self):
+        """Kiểm tra tính toàn vẹn của dữ liệu telemetry NASA Shuttle thô không nhãn."""
+        df = pd.read_csv("shuttle.csv", header=None)
+        self.assertEqual(df.shape[0], 58000, f"Dữ liệu phải có đúng 58,000 dòng, hiện có {df.shape[0]}")
+        self.assertEqual(df.shape[1], 10, f"Dữ liệu thô phải có đúng 10 cột đặc trưng, hiện có {df.shape[1]}")
         self.assertEqual(df.isnull().sum().sum(), 0, "Dữ liệu không được chứa giá trị NaN")
+        self.assertTrue(all(np.issubdtype(dtype, np.integer) for dtype in df.dtypes), "Toàn bộ 10 cột phải là số nguyên")
 
     def test_03_pipeline_scratch_inference(self):
         """Kiểm tra pipeline tự xây dựng (Scratch) thuần iForest và khả năng suy luận (Inference)."""
         model = IsolationForestScratch(n_estimators=10, max_samples=64, random_state=42)
         pipe = PipelineScratch(model=model)
         
-        # Fit nhanh trên tập nhỏ
-        df = pd.read_csv("shuttle_preprocessed.csv", nrows=100)
-        feat_cols = [c for c in df.columns if c.startswith("att_")]
-        pipe.fit(df[feat_cols].values)
+        # Fit nhanh trên tập nhỏ 10 đặc trưng của shuttle.csv
+        df = pd.read_csv("shuttle.csv", header=None, nrows=100)
+        pipe.fit(df.values)
         
-        # Mẫu dữ liệu giả lập 9 thuộc tính
-        dummy_sample = pd.DataFrame([{f"att_{i}": 50.0 for i in range(1, 10)}])
+        # Mẫu dữ liệu giả lập 10 thuộc tính
+        dummy_sample = pd.DataFrame([{f"feat_{i}": 50.0 for i in range(1, 11)}])
         score = float(pipe.anomaly_score(dummy_sample.values)[0])
         pred = int(pipe.predict(dummy_sample.values)[0])
         
@@ -152,19 +155,25 @@ class TestIsolationForestPipeline(unittest.TestCase):
         self.assertEqual(len(imp_std), 3)
 
     def test_09_train_test_split_size_and_disjoint(self):
-        """Kiểm tra phân chia tập dữ liệu 80/20: Train=46,400, Test=11,600 và không trùng lặp index."""
-        df = pd.read_csv("shuttle_preprocessed.csv")
-        feat_cols = [c for c in df.columns if c.startswith("att_")]
-        X = df[feat_cols]
-        y = df["label"]
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=True
-        )
+        """Kiểm tra phân chia tập dữ liệu 80/20 không giám sát: Train=46,400, Test=11,600 và không trùng lặp index."""
+        df = pd.read_csv("shuttle.csv", header=None)
+        X_train, X_test = train_test_split(df, test_size=0.2, random_state=42)
         self.assertEqual(len(X_train), 46400, f"Train phải có đúng 46,400 mẫu, hiện là {len(X_train)}")
         self.assertEqual(len(X_test), 11600, f"Test phải có đúng 11,600 mẫu, hiện là {len(X_test)}")
         train_indices = set(X_train.index)
         test_indices = set(X_test.index)
         self.assertTrue(train_indices.isdisjoint(test_indices), "Data overlap: train/test indices overlap!")
+
+        # Kiểm tra thêm nhánh phân chia có nhãn (supervised fallback) trên dữ liệu giả lập
+        X_dummy = np.random.RandomState(42).randn(100, 4)
+        y_dummy = np.array([0] * 80 + [1] * 20)
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X_dummy, y_dummy, test_size=0.2, random_state=42, stratify=True
+        )
+        self.assertEqual(len(X_tr), 80)
+        self.assertEqual(len(X_te), 20)
+        self.assertEqual(len(y_tr), 80)
+        self.assertEqual(len(y_te), 20)
 
     def test_10_iforest_config(self):
         """Kiểm tra cấu hình mô hình IsolationForest."""
@@ -317,6 +326,70 @@ class TestIsolationForestPipeline(unittest.TestCase):
             permutation_importance_scratch(model, X_dummy, np.zeros(len(X_dummy)), n_repeats=0)
         with self.assertRaises(ValueError):
             permutation_importance_scratch(model, X_dummy, np.zeros(len(X_dummy)), scoring="invalid")
+
+    def test_17_unsupervised_kfold(self):
+        """Kiểm tra K-Fold không giám sát (Unsupervised K-Fold CV)."""
+        # Kiểm tra validation tham số
+        with self.assertRaises(ValueError):
+            KFold(n_splits=1)
+        with self.assertRaises(ValueError):
+            list(KFold(n_splits=5).split(np.zeros((3, 2))))
+        with self.assertRaises(ValueError):
+            list(KFold(n_splits=3).split(None))
+
+        # Kiểm tra phân chia chính xác n_splits và không giao nhau giữa train/val
+        X_dummy = np.random.RandomState(42).randn(90, 4)
+        kf = KFold(n_splits=3, shuffle=True, random_state=42)
+        splits = list(kf.split(X_dummy))
+        self.assertEqual(len(splits), 3)
+
+        all_val_indices = []
+        for train_idx, val_idx in splits:
+            self.assertEqual(len(train_idx) + len(val_idx), 90)
+            self.assertTrue(set(train_idx).isdisjoint(set(val_idx)), "Train và Val index phải rời rạc")
+            all_val_indices.extend(val_idx)
+
+        self.assertEqual(sorted(all_val_indices), list(range(90)), "Tập hợp các validation fold phải bao phủ toàn bộ dữ liệu")
+
+    def test_18_unsupervised_feature_importance_and_root_cause(self):
+        """Kiểm tra tính toán Feature Importance và Root Cause Analysis không giám sát."""
+        X_dummy = np.random.RandomState(42).randn(100, 5)
+        # Giả lập đặc trưng 0 có ngoại lệ cực lớn -> anomaly score sẽ tương quan mạnh với đặc trưng 0
+        X_dummy[:5, 0] += 20.0
+        model = IsolationForest(n_estimators=20, max_samples=64, random_state=42)
+        model.fit(X_dummy)
+
+        # 1. Feature Importance
+        df_imp = unsupervised_feature_importance(model, X_dummy, feature_names=[f"sensor_{i}" for i in range(5)])
+        self.assertEqual(len(df_imp), 5)
+        self.assertIn("Đặc trưng", df_imp.columns)
+        self.assertIn("Tương quan Pearson |r|", df_imp.columns)
+        self.assertIn("Chỉ số quan trọng tổng hợp", df_imp.columns)
+        self.assertTrue(np.all(df_imp["Chỉ số quan trọng tổng hợp"] >= 0))
+
+        # 2. Root Cause Analysis
+        df_rca = explain_anomalies_root_cause(model, X_dummy, top_k=5, feature_names=[f"sensor_{i}" for i in range(5)])
+        self.assertEqual(len(df_rca), 5)
+        self.assertIn("Anomaly Score", df_rca.columns)
+        self.assertIn("Đặc trưng lệch mạnh nhất", df_rca.columns)
+        self.assertIn("Mức cảnh báo", df_rca.columns)
+
+    def test_19_unsupervised_metrics_log_integrity(self):
+        """Kiểm tra tính toàn vẹn của file log thực nghiệm không giám sát (metrics_unsupervised.csv)."""
+        metrics_file = "metrics_unsupervised.csv"
+        if os.path.exists(metrics_file):
+            df_log = pd.read_csv(metrics_file)
+            expected_cols = [
+                "Timestamp", "Dataset", "N_Samples", "N_Features",
+                "Train_Size", "Test_Size", "N_Estimators", "Max_Samples",
+                "Max_Features", "Threshold_Theoretical",
+                "Anomalies_Detected_Theoretical", "Anomaly_Rate_Theoretical_Pct",
+                "Score_Mean", "Score_Std", "Top3_Features"
+            ]
+            for col in expected_cols:
+                self.assertIn(col, df_log.columns, f"Cột '{col}' phải có trong metrics_unsupervised.csv")
+            self.assertGreater(len(df_log), 0, "metrics_unsupervised.csv không được rỗng")
+
 
 
 if __name__ == "__main__":

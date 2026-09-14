@@ -1,0 +1,10 @@
+Timestamp,Dataset,N_Samples,N_Features,Train_Size,Test_Size,N_Estimators,Max_Samples,Max_Features,Threshold_Theoretical,Anomalies_Detected_Theoretical,Anomaly_Rate_Theoretical_Pct,Score_Mean,Score_Std,Top3_Features
+2026-09-13 21:00:52,shuttle.csv (Unlabelled),58000,10,46400,11600,100,256,1.0,0.5,1690,14.57,0.4365,0.0641,"feat_9, feat_8, feat_10"
+2026-09-14 07:22:17,shuttle.csv (Unlabelled),58000,10,46400,11600,100,256,1.0,0.5,1690,14.57,0.4365,0.0641,"feat_9, feat_8, feat_10"
+2026-09-14 07:22:32,shuttle.csv (Unlabelled),58000,10,46400,11600,100,128,1.0,0.5,2018,17.4,0.4443,0.0662,"feat_9, feat_8, feat_10"
+2026-09-14 07:33:18,shuttle.csv (Unlabelled),58000,10,46400,11600,100,256,1.0,0.5,1690,14.57,0.4365,0.0641,"feat_9, feat_8, feat_10"
+2026-09-14 07:34:50,shuttle.csv (Unlabelled),58000,10,46400,11600,100,128,1.0,0.5,2018,17.4,0.4443,0.0662,"feat_9, feat_8, feat_10"
+2026-09-14 07:47:14,shuttle.csv (Unlabelled),58000,10,46400,11600,100,256,1.0,0.5,1690,14.57,0.4365,0.0641,"feat_9, feat_8, feat_10"
+2026-09-14 07:49:37,shuttle.csv (Unlabelled),58000,10,46400,11600,100,128,1.0,0.5,2018,17.4,0.4443,0.0662,"feat_9, feat_8, feat_10"
+2026-09-14 07:50:52,shuttle.csv (Unlabelled),58000,10,46400,11600,100,256,1.0,0.5,1690,14.57,0.4365,0.0641,"feat_9, feat_8, feat_10"
+2026-09-14 07:57:54,shuttle.csv (Unlabelled),58000,10,46400,11600,100,256,1.0,0.5,1690,14.57,0.4365,0.0641,"feat_9, feat_8, feat_10"

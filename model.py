@@ -55,19 +55,31 @@ class IsolationTree:
         if current_depth >= self.max_depth or n_samples <= 1:
             return Node(size=n_samples, is_leaf=True)
 
-        candidate_feats = self.features_subset if self.features_subset is not None else np.arange(n_features)
-        sub_X = X[:, candidate_feats]
-        col_mins = np.min(sub_X, axis=0)
-        col_maxs = np.max(sub_X, axis=0)
-        valid_idx = np.where(col_mins < col_maxs)[0]
+        if self.features_subset is not None:
+            sub_X = X[:, self.features_subset]
+            col_mins = np.min(sub_X, axis=0)
+            col_maxs = np.max(sub_X, axis=0)
+            valid_idx = np.where(col_mins < col_maxs)[0]
 
-        if len(valid_idx) == 0:
-            return Node(size=n_samples, is_leaf=True)
+            if len(valid_idx) == 0:
+                return Node(size=n_samples, is_leaf=True)
 
-        # Chọn ngẫu nhiên đều 1 thuộc tính từ tập các thuộc tính hợp lệ (Algorithm 2, Liu et al., 2008)
-        pick = int(self.rng.choice(valid_idx))
-        chosen_feat = int(candidate_feats[pick])
-        feat_min, feat_max = float(col_mins[pick]), float(col_maxs[pick])
+            # Chọn ngẫu nhiên đều 1 thuộc tính từ tập các thuộc tính hợp lệ (Algorithm 2, Liu et al., 2008)
+            pick = int(self.rng.choice(valid_idx))
+            chosen_feat = int(self.features_subset[pick])
+            feat_min, feat_max = float(col_mins[pick]), float(col_maxs[pick])
+        else:
+            col_mins = np.min(X, axis=0)
+            col_maxs = np.max(X, axis=0)
+            valid_idx = np.where(col_mins < col_maxs)[0]
+
+            if len(valid_idx) == 0:
+                return Node(size=n_samples, is_leaf=True)
+
+            # Chọn ngẫu nhiên đều 1 thuộc tính từ toàn bộ không gian thuộc tính
+            pick = int(self.rng.choice(valid_idx))
+            chosen_feat = pick
+            feat_min, feat_max = float(col_mins[pick]), float(col_maxs[pick])
 
         split_val = float(self.rng.uniform(feat_min, feat_max))
         left_mask = X[:, chosen_feat] < split_val
@@ -105,9 +117,10 @@ class IsolationTree:
                 continue
             col_vals = X[indices, curr_node.split_feat]
             mask = col_vals < curr_node.split_val
-            if curr_node.right is not None:
+            n_left = int(np.count_nonzero(mask))
+            if n_left < len(indices) and curr_node.right is not None:
                 stack.append((indices[~mask], curr_node.right, depth + 1))
-            if curr_node.left is not None:
+            if n_left > 0 and curr_node.left is not None:
                 stack.append((indices[mask], curr_node.left, depth + 1))
 
         return lengths
