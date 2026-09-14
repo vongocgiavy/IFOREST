@@ -7613,14 +7613,18 @@ a.anchor-link {
 <span class="n">plt</span><span class="o">.</span><span class="n">rcParams</span><span class="p">[</span><span class="s1">'axes.linewidth'</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.8</span>
 
 <span class="c1"># Thêm thư mục gốc vào PYTHONPATH</span>
+<span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="s1">'.'</span><span class="p">))</span>
 <span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="s1">'..'</span><span class="p">))</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">importlib</span>
+<span class="k">if</span> <span class="s1">'run_pipeline'</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">modules</span><span class="p">:</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">run_pipeline</span>
+    <span class="n">importlib</span><span class="o">.</span><span class="n">reload</span><span class="p">(</span><span class="n">run_pipeline</span><span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">IsolationForest</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">run_pipeline</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
     <span class="n">train_test_split</span><span class="p">,</span>
     <span class="n">KFold</span><span class="p">,</span>
     <span class="n">unsupervised_feature_importance</span><span class="p">,</span>
     <span class="n">explain_anomalies_root_cause</span><span class="p">,</span>
-    <span class="n">robust_deviation</span><span class="p">,</span>
     <span class="n">roc_auc_score</span><span class="p">,</span>
     <span class="n">average_precision_score</span><span class="p">,</span>
     <span class="n">roc_curve</span><span class="p">,</span>
@@ -9334,7 +9338,7 @@ Kiem dinh on dinh: [OK] Stability check: Spearman rho=0.98 &gt;= 0.6
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="application/vnd.jupyter.stderr" tabindex="0">
-<pre>C:\Users\PC\AppData\Local\Temp\ipykernel_28356\2697920553.py:11: FutureWarning: 
+<pre>C:\Users\PC\AppData\Local\Temp\ipykernel_12468\2697920553.py:11: FutureWarning: 
 
 Passing `palette` without assigning `hue` is deprecated and will be removed in v0.14.0. Assign the `y` variable to `hue` and set `legend=False` for the same effect.
 
