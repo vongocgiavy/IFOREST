@@ -21,7 +21,7 @@ d:/May_Hoc/iforest/
 │
 ├── model.py                                 # Thuật toán thuần Isolation Forest (100% Pure NumPy: Node, IsolationTree, IsolationForest)
 ├── run_pipeline.py                          # Pipeline điều phối không giám sát, Unsupervised 3-Fold CV, Root Cause Analysis & CLI
-├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook báo cáo khoa học trực quan (21 bước chuẩn mực, 42 cells)
+├── shuttle_anomaly_detection_iforest.ipynb  # Jupyter Notebook báo cáo khoa học trực quan (21 bước chuẩn mực, 44 cells, 14 đồ thị)
 │
 └── tests/
     └── test_pipeline.py                     # Bộ 19 bài kiểm thử tự động toàn diện (Toán học, CV, Edge Cases, Reproducibility)
