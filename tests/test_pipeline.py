@@ -376,21 +376,15 @@ class TestIsolationForestPipeline(unittest.TestCase):
         self.assertIn("Đặc trưng lệch mạnh nhất", df_rca.columns)
         self.assertIn("Mức cảnh báo", df_rca.columns)
 
-    def test_19_unsupervised_metrics_log_integrity(self):
-        """Kiểm tra tính toàn vẹn của file log thực nghiệm không giám sát (metrics_unsupervised.csv)."""
-        metrics_file = "metrics_unsupervised.csv"
-        if os.path.exists(metrics_file):
-            df_log = pd.read_csv(metrics_file)
-            expected_cols = [
-                "Timestamp", "Dataset", "N_Samples", "N_Features",
-                "Train_Size", "Test_Size", "N_Estimators", "Max_Samples",
-                "Max_Features", "Threshold_Theoretical",
-                "Anomalies_Detected_Theoretical", "Anomaly_Rate_Theoretical_Pct",
-                "Score_Mean", "Score_Std", "Top3_Features"
-            ]
-            for col in expected_cols:
-                self.assertIn(col, df_log.columns, f"Cột '{col}' phải có trong metrics_unsupervised.csv")
-            self.assertGreater(len(df_log), 0, "metrics_unsupervised.csv không được rỗng")
+    def test_19_unsupervised_pipeline_reproducibility(self):
+        """Kiểm tra tính tái lập (Reproducibility) của pipeline với fixed random_state."""
+        X_sub = pd.read_csv("shuttle.csv", header=None).iloc[:200].values
+        m1 = IsolationForest(n_estimators=30, max_samples=128, random_state=42).fit(X_sub)
+        m2 = IsolationForest(n_estimators=30, max_samples=128, random_state=42).fit(X_sub)
+        scores1 = m1.anomaly_score(X_sub)
+        scores2 = m2.anomaly_score(X_sub)
+        np.testing.assert_allclose(scores1, scores2, atol=1e-9,
+                                   err_msg="Hai mô hình cùng random_state phải cho Anomaly Score đồng nhất 100%")
 
 
 

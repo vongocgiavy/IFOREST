@@ -13,7 +13,6 @@ d:/May_Hoc/iforest/
 │
 ├── requirements.txt                         # Thư viện phụ thuộc (numpy, pandas, matplotlib, seaborn, pytest)
 ├── README.md                                # Hướng dẫn và báo cáo khoa học chuẩn hóa
-├── metrics_unsupervised.csv                 # Bảng ghi nhật ký thực nghiệm không giám sát (Pure Unsupervised Logs)
 │
 ├── shuttle.csv                              # Dữ liệu telemetry gốc 58,000 mẫu x 10 đặc trưng (không nhãn, không tiêu đề)
 │
@@ -84,7 +83,7 @@ py -3.13 run_pipeline.py
 - Tự động nạp `shuttle.csv` (10 cột, không nhãn).
 - Phân chia Train (46,400) / Test (11,600) rời rạc 100%.
 - Huấn luyện 100 cây cô lập $iTree$ ($\psi=256$, $max\_depth=8$).
-- Xuất bảng 5 ngưỡng quyết định không giám sát, trích xuất Top 5 mẫu bất thường nhất kèm Root Cause Analysis và ghi nhật ký vào `metrics_unsupervised.csv`.
+- Xuất bảng 5 ngưỡng quyết định không giám sát và trích xuất Top 5 mẫu bất thường nhất kèm Root Cause Analysis.
 
 ### 5.3. Tinh chỉnh Siêu tham số với Unsupervised 3-Fold CV
 
@@ -114,7 +113,7 @@ Bộ kiểm thử gồm **19 bài test toàn diện**, pass **100% (19/19 tests)
 - `test_16`: Kiểm tra các trường hợp biên, ma trận rỗng và bẫy lỗi lệch kích thước.
 - `test_17`: Kiểm tra Unsupervised `KFold` (chia 3-fold không nhãn, phủ kín dữ liệu, fold rời rạc).
 - `test_18`: Kiểm tra `unsupervised_feature_importance` và `explain_anomalies_root_cause`.
-- `test_19`: Kiểm tra tính toàn vẹn của dữ liệu telemetry NASA Shuttle thô không nhãn (58,000 dòng x 10 cột số nguyên, 0 NaN).
+- `test_19`: Kiểm tra tính tái lập (Reproducibility) và độ ổn định của pipeline khi cố định hạt giống ngẫu nhiên (`random_state`).
 
 ---
 

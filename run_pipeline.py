@@ -737,32 +737,7 @@ def main():
     top3_feats = feat_imp_df.head(3)['Đặc trưng'].tolist()
     print(f"\n[*] Top 3 đặc trưng ảnh hưởng mạnh nhất đến sự bất thường: {top3_feats}")
 
-    # 8. Ghi nhận kết quả vào metrics_unsupervised.csv
-    row_log = {
-        "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "Dataset": "shuttle.csv (Unlabelled)",
-        "N_Samples": len(X),
-        "N_Features": len(feature_cols),
-        "Train_Size": len(X_train),
-        "Test_Size": len(X_test),
-        "N_Estimators": best_params["n_estimators"],
-        "Max_Samples": best_params["max_samples"],
-        "Max_Features": best_params["max_features"],
-        "Threshold_Theoretical": th_theoretical,
-        "Anomalies_Detected_Theoretical": cnt_theo,
-        "Anomaly_Rate_Theoretical_Pct": round(pct_theo, 2),
-        "Score_Mean": round(sc_mean, 4),
-        "Score_Std": round(sc_std, 4),
-        "Top3_Features": ", ".join(top3_feats),
-    }
-    metrics_df = pd.DataFrame([row_log])
-    metrics_path = "metrics_unsupervised.csv"
-    if not os.path.exists(metrics_path) or os.path.getsize(metrics_path) == 0:
-        metrics_df.to_csv(metrics_path, index=False)
-    else:
-        metrics_df.to_csv(metrics_path, mode="a", header=False, index=False)
-
-    # 9. Kiểm tra suy luận mẫu thời gian thực
+    # 8. Kiểm tra suy luận mẫu thời gian thực
     pipe = Pipeline(model=best_model)
     sample_first = X_test.iloc[0].to_dict()
     sample_score = float(pipe.anomaly_score(np.array([list(sample_first.values())]))[0])
