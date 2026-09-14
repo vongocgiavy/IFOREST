@@ -60,6 +60,20 @@ $$s(\mathbf{x}, \psi) = 2^{-\frac{\mathbb{E}(h(\mathbf{x}))}{c(\psi)}}$$
 - Khi $\mathbb{E}(h(\mathbf{x})) \to c(\psi) \implies s \to 0.5$: Mẫu có trạng thái bình thường danh định.
 - Khi $\mathbb{E}(h(\mathbf{x})) \to \psi - 1 \implies s \to 0$: Mẫu nằm sâu trong vùng cụm mật độ dày đặc.
 
+### 3.3. Hệ Thống Các Hệ Số Phạt Phù Hợp (Penalty Factors Formulation)
+Để mô hình hoạt động khách quan, không thiên vị và đáp ứng tiêu chuẩn an toàn hàng không vũ trụ khắt khe, hệ thống tích hợp 3 cấp độ hệ số phạt (Penalty Factors):
+1. **Hệ số phạt phần dư độ sâu tại nút lá ($c(n)$ as Leaf Adjustment Penalty):**
+   Khi cây cô lập đạt giới hạn độ sâu tối đa $max\_depth = \lceil \log_2(\psi) \rceil = 8$ hoặc các điểm còn lại hoàn toàn đồng nhất về giá trị, quá trình đệ quy kết thúc tại nút lá chứa $n > 1$ mẫu. Theo định lý Liu et al. (2008), nếu chỉ lấy độ sâu duyệt $e$, đường đi sẽ bị đánh giá thấp nghiêm trọng. Độ dài đường đi thực tế được cộng thêm hệ số phạt chính xác tương đương kỳ vọng độ dài cây tìm kiếm nhị phân còn lại:
+   $$h(\mathbf{x}) = e + c(n)$$
+   với $c(n) = 2\ln(n-1) + 2\gamma - \frac{2(n-1)}{n}$. Hệ số phạt $c(n)$ giúp ước lượng độ dài đường đi bảo toàn tính tiệm cận không thiên vị (unbiased estimator) ngay cả khi cây bị cắt tỉa sớm.
+2. **Hệ số phạt điều chuẩn cấu trúc (Structural Regularization Penalty):**
+   Trần độ sâu tối đa $max\_depth = \lceil \log_2(\psi) \rceil = 8$ đóng vai trò như một cơ chế phạt độ phức tạp mô hình (Structural Regularization), ngăn chặn cây phân nhánh quá sâu vào vùng vi cấu trúc nhiễu, kiểm soát phương sai và triệt tiêu nguy cơ quá khớp (overfitting).
+3. **Hệ số phạt chi phí rủi ro bất đối xứng (Asymmetric Risk Cost Penalty $\omega$):**
+   Trong hệ thống giám sát an toàn bay NASA, chi phí tổn thất do bỏ sót sự cố bất thường (False Negative - sự cố phần cứng, áp suất đột biến, rò rỉ nhiệt) đe dọa thảm họa nghiệm trọng hơn rất nhiều so với chi phí kiểm tra một cảnh báo giả (False Positive - quy trình rà soát telemetry định kỳ). Do đó, tỷ số chi phí phạt được xác lập:
+   $$\omega = \frac{C_{FN}}{C_{FP}} \ge 10$$
+   $$\mathcal{L}_{\text{cost}}(\tau; \omega) = \omega \cdot \mathbb{P}(s < \tau \mid \text{Anomaly}) + 1.0 \cdot \mathbb{P}(s \ge \tau \mid \text{Nominal})$$
+   Hệ số phạt $\omega \ge 10$ định hình chiến lược lựa chọn ngưỡng quyết định: Ưu tiên các ngưỡng có độ nhạy cao ($P_{95}$ hoặc ngưỡng lý thuyết $0.50$) nhằm triệt tiêu tối đa rủi ro tổn thất từ các sự cố tiềm ẩn.
+
 ---
 
 ## 4. Hệ Thống 5 Ngưỡng Quyết Định Không Giám Sát
@@ -102,7 +116,7 @@ Toàn bộ quy trình trong dự án và Jupyter Notebook [shuttle_anomaly_detec
 | **4** | **Data Cleaning** | Thẩm định tính toàn vẹn (0 NaN, 0 Inf); bảo toàn 100% giá trị ngoại lai vật lý phục vụ phát hiện dị thường. |
 | **5** | **Feature Scaling** | Chứng minh toán học và thực nghiệm tính bất biến tỷ lệ của $iTree$ trước phép biến đổi đơn điệu; giữ nguyên thang đo nguyên gốc `int64`. |
 | **6** | **Categorical Encoding** | Thẩm định 10 kênh đều là biến định lượng liên tục/rời rạc, không phát sinh chi phí mã hóa One-Hot. |
-| **7** | **Algorithm & Loss Selection** | Lựa chọn Isolation Forest (Liu et al., 2008); thiết lập hàm mục tiêu điểm dị biệt $s(\mathbf{x}, \psi) = 2^{-\mathbb{E}(h(\mathbf{x}))/c(\psi)}$ qua phân hoạch không gian ngẫu nhiên. |
+| **7** | **Algorithm, Objective & Penalty Selection** | Lựa chọn Isolation Forest (Liu et al., 2008); thiết lập hàm điểm bất thường $s(\mathbf{x}, \psi) = 2^{-\mathbb{E}(h(\mathbf{x}))/c(\psi)}$ và 3 cấp độ hệ số phạt (Hệ số phạt phần dư nút lá $c(n)$, Điều chuẩn độ sâu cấu trúc $max\_depth$, và Tỷ số phạt chi phí rủi ro $\omega \ge 10$). |
 | **8** | **Feature Engineering** | Khảo sát lời nguyền số chiều; tận dụng cơ chế phân hoạch 1D ngẫu nhiên ở mỗi nút để kháng hiện tượng đồng nhất khoảng cách. |
 | **9** | **Data Splitting & Leakage** | Phân chia Train/Test 80/20 ($46,400$ / $11,600$) với tập chỉ số rời rạc tuyệt đối (`isdisjoint == True`), loại trừ triệt để rò rỉ thông tin. |
 | **10** | **Splitting Strategy** | Luận giải sự phù hợp của phân chia ngẫu nhiên đồng đều có cố định hạt giống (`random_state=42`) trên dữ liệu không nhãn. |
@@ -110,7 +124,7 @@ Toàn bộ quy trình trong dự án và Jupyter Notebook [shuttle_anomaly_detec
 | **12** | **No Free Lunch Theorem** | Phân tích không gian giả thuyết phân hoạch trực giao của $iTree$ so với giả định phân phối lồi của Baseline; phân tích giới hạn với dị thường phân bố xiên góc. |
 | **13** | **Bias-Variance Tradeoff** | Khảo sát số lượng cây $t$ (kiểm soát Variance, hội tụ tại $t \ge 100$) và kích thước mẫu con $\psi=256$ (kiểm soát Bias, chống swamping và masking). |
 | **14** | **Hyperparameter Tuning** | Thiết lập lưới tìm kiếm không giám sát $\psi \in \{128, 256\}$, $t \in \{50, 100\}$ theo tiêu chí tối đa hóa độ trải rộng điểm số (Score Spread $\sigma_s$). |
-| **15** | **Evaluation Metrics** | Xây dựng hệ thống 5 cấp độ ngưỡng phân tầng (Lý thuyết $0.50$, Top 5%, Top 1%, Top 0.1%, Gaussian $\mu + 2\sigma$). |
+| **15** | **Evaluation Metrics & Cost Thresholds** | Xây dựng hàm chi phí rủi ro bất đối xứng $\mathcal{L}_{\text{cost}}(\tau; \omega=10)$ và hệ thống 5 cấp độ ngưỡng phân tầng (Lý thuyết $0.50$, Top 5%, Top 1%, Top 0.1%, Gaussian $\mu + 2\sigma$). |
 | **16** | **Cross-Validation** | Thực hiện Unsupervised 3-Fold Cross-Validation trên tập Train, chứng minh tính ổn định cao của phân phối điểm số trên từng fold kiểm định. |
 | **17** | **Model Training & Inference** | Huấn luyện mô hình sản xuất tối ưu ($n=100, \psi=256$) trên $46,400$ mẫu Train và thực hiện suy luận trên $11,600$ mẫu Test. |
 | **18** | **Statistical Significance** | Tính khoảng tin cậy 95% ($\text{CI}_{95\%} = [0.4353, 0.4377]$) và kiểm định giả thuyết hai mẫu độc lập $Z$-test ($Z = -33.84, p < 10^{-10}$). |
