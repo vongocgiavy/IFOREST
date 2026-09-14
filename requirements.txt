@@ -13,3 +13,7 @@ seaborn>=0.12.0
 
 # Kiểm thử tự động (Testing)
 pytest>=7.0.0
+
+# Jupyter Notebook & Báo cáo HTML
+jupyter>=1.0.0
+nbconvert>=7.0.0

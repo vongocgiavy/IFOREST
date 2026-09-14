@@ -800,7 +800,7 @@ def main():
     th_top5 = float(np.percentile(train_scores, 95.0))
     th_top1 = float(np.percentile(train_scores, 99.0))
     th_top01 = float(np.percentile(train_scores, 99.9))
-    th_stat_3sigma = float(np.mean(train_scores) + 2.0 * np.std(train_scores))
+    th_stat_2sigma = float(np.mean(train_scores) + 2.0 * np.std(train_scores))
 
     # Thống kê phân phối điểm Anomaly Score trên tập Test
     sc_mean = float(np.mean(test_scores))
@@ -841,7 +841,7 @@ def main():
     print(f"{'2. Phân vị nhiễm bẩn ước lượng Top 5%':<35} | {th_top5:<10.4f} | {cnt_top5:<18,d} | {pct_top5:<10.2f}%")
     print(f"{'3. Phân vị nguy hiểm cao Top 1%':<35} | {th_top1:<10.4f} | {cnt_top1:<18,d} | {pct_top1:<10.2f}%")
     print(f"{'4. Phân vị cực đoan Top 0.1%':<35} | {th_top01:<10.4f} | {int(np.sum(test_scores >= th_top01)):<18,d} | {(np.sum(test_scores >= th_top01)/len(test_scores)*100):<10.2f}%")
-    print(f"{'5. Ngưỡng thống kê (Mean + 2*Std)':<35} | {th_stat_3sigma:<10.4f} | {int(np.sum(test_scores >= th_stat_3sigma)):<18,d} | {(np.sum(test_scores >= th_stat_3sigma)/len(test_scores)*100):<10.2f}%")
+    print(f"{'5. Ngưỡng thống kê (Mean + 2*Std)':<35} | {th_stat_2sigma:<10.4f} | {int(np.sum(test_scores >= th_stat_2sigma)):<18,d} | {(np.sum(test_scores >= th_stat_2sigma)/len(test_scores)*100):<10.2f}%")
     print("=" * 78)
 
     # 6. Trich xuat Top-5 mau di biet nhat (Root Cause Analysis)
@@ -892,6 +892,45 @@ def main():
     print(f"  Voi nguong Top 5% (score >= {th_top5:.4f}):")
     print(f"    Precision = {prec_top5:.4f} | Recall = {rec_top5:.4f} | F1 = {f1_top5:.4f}")
     print("=" * 70)
+
+    # 8b. SO SANH BASELINE vs IFOREST (Quantitative)
+    print("\n" + "=" * 70)
+    print("SO SANH DINH LUONG: BASELINE vs ISOLATION FOREST")
+    print("=" * 70)
+    print("[*] Baseline: Distance-to-Centroid (Normalized Euclidean, unsupervised)")
+
+    # Tinh baseline score: khoang cach L2 chuan hoa tu trung tam tap train
+    X_train_arr = X_train.values.astype(np.float64)
+    X_test_arr  = X_test.values.astype(np.float64)
+    train_mean = np.mean(X_train_arr, axis=0)
+    train_std  = np.std(X_train_arr, axis=0)
+    train_std  = np.where(train_std == 0.0, 1.0, train_std)  # tranh chia cho 0
+
+    # Normalize va tinh khoang cach Euclidean
+    X_test_norm    = (X_test_arr - train_mean) / train_std
+    baseline_dists = np.sqrt(np.sum(X_test_norm ** 2, axis=1))
+
+    # Chuan hoa baseline_dists ve [0, 1] de so sanh cung thang voi anomaly score
+    b_min, b_max = float(baseline_dists.min()), float(baseline_dists.max())
+    baseline_scores = (baseline_dists - b_min) / (b_max - b_min + 1e-12)
+
+    baseline_roc  = roc_auc_score(y_eval, baseline_scores)
+    baseline_ap   = average_precision_score(y_eval, baseline_scores)
+    iforest_roc   = roc_auc
+    iforest_ap    = ap
+
+    print(f"\n{'Phuong phap':<30} | {'ROC-AUC':>10} | {'Avg Precision (AP)':>20} | {'AP / Baseline AP':>18}")
+    print("-" * 84)
+    print(f"{'Baseline (Distance-Centroid)':<30} | {baseline_roc:>10.4f} | {baseline_ap:>20.4f} | {1.0:>18.2f}x")
+    print(f"{'Isolation Forest (9 sensors)':<30} | {iforest_roc:>10.4f} | {iforest_ap:>20.4f} | {iforest_ap/max(baseline_ap,1e-9):>18.2f}x")
+    print("-" * 84)
+
+    roc_gain = iforest_roc - baseline_roc
+    ap_gain  = iforest_ap  - baseline_ap
+    print(f"  Cai thien ROC-AUC : {roc_gain:+.4f} ({'+' if roc_gain >= 0 else ''}{roc_gain/max(baseline_roc,1e-9)*100:.1f}%)")
+    print(f"  Cai thien AP      : {ap_gain:+.4f} ({'+' if ap_gain >= 0 else ''}{ap_gain/max(baseline_ap,1e-9)*100:.1f}%)")
+    print("=" * 70)
+
 
     # 9. Kiem tra suy luan mau thoi gian thuc
     pipe = Pipeline(model=best_model)

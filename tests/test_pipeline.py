@@ -61,17 +61,18 @@ class TestIsolationForestPipeline(unittest.TestCase):
         model = IsolationForestScratch(n_estimators=10, max_samples=64, random_state=42)
         pipe = PipelineScratch(model=model)
         
-        # Fit nhanh trên tập nhỏ 10 đặc trưng của shuttle.csv
+        # Fit đúng 9 cảm biến thực sự (cột 0-8), không lấy cột nhãn UCI (cột 9)
         df = pd.read_csv("shuttle.csv", header=None, nrows=100)
-        pipe.fit(df.values)
+        pipe.fit(df.iloc[:, :9].values)  # 9 sensor cols only — production behavior
         
-        # Mẫu dữ liệu giả lập 10 thuộc tính
-        dummy_sample = pd.DataFrame([{f"feat_{i}": 50.0 for i in range(1, 11)}])
-        score = float(pipe.anomaly_score(dummy_sample.values)[0])
-        pred = int(pipe.predict(dummy_sample.values)[0])
+        # Mẫu dữ liệu giả lập 9 thuộc tính cảm biến
+        dummy_sample = np.array([[50.0] * 9])
+        score = float(pipe.anomaly_score(dummy_sample)[0])
+        pred = int(pipe.predict(dummy_sample)[0])
         
         self.assertTrue(0.0 <= score <= 1.0, f"Anomaly score phải nằm trong đoạn [0, 1], hiện là {score}")
         self.assertIn(pred, [0, 1], "Dự đoán phải là nhãn nhị phân {0, 1}")
+
 
     def test_04_config_validity(self):
         """Kiểm tra tính hợp lệ của cấu hình mặc định và lưới siêu tham số (In-Code Config)."""

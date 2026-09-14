@@ -188,7 +188,7 @@ Thực thi 21 bài kiểm thử nghiêm ngặt bao quát toán học, kiểm so�
 py -3.13 -m pytest tests/test_pipeline.py -v
 ```
 
-*Kết quả kiểm thử thực tế:* **21 passed in 0.53s (100% Pass Rate)**.
+*Kết quả kiểm thử thực tế:* **21 passed (< 1.0s, 100% Pass Rate)**.
 
 ### 8.5. Khởi Chạy Jupyter Notebook
 Mở notebook phân tích trực quan toàn diện (15 hình vẽ khoa học tương tác):
