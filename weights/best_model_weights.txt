@@ -1,0 +1,23 @@
+============================================================
+WEIGHTS: BEST_MODEL_WEIGHTS
+============================================================
+
+[Sieu tham so]
+  n_estimators  : 100
+  max_samples   : 128
+  max_features  : 1.0
+  contamination : auto
+  random_state  : 42
+
+[Trang thai mo hinh]
+  n_features_in_      : 9
+  max_samples_actual_ : 128
+  max_depth           : 7
+  c_psi_              : 8.858431
+  threshold_          : 0.500000
+  offset_             : -0.500000
+
+[So cay da luu] : 100
+
+Tao boi: save_weights.py
+============================================================
